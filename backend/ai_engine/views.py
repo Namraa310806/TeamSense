@@ -3,6 +3,10 @@ from rest_framework.response import Response
 from rest_framework import status
 from ai_services.embedding_service import EmbeddingService
 from ai_services.vector_store import FaissVectorStore
+from ai_services.assistant_service import AssistantService
+from employees.models import Employee
+from meetings.models import Meeting
+from analytics.models import EmployeeInsight
 
 @api_view(['POST'])
 def ai_query(request):
@@ -22,6 +26,39 @@ def ai_query(request):
     result = rag_query(query, employee_id=employee_id)
 
     return Response(result)
+
+@api_view(['POST'])
+def hr_assistant(request):
+    """HR AI Assistant endpoint using Mistral-7B-Instruct (Hugging Face API)."""
+    question = request.data.get('question', '')
+    employee_id = request.data.get('employee_id')
+    if not question:
+        return Response({'error': 'Question is required'}, status=status.HTTP_400_BAD_REQUEST)
+    # Gather context (simple demo: summaries, feedback, sentiment)
+    context_parts = []
+    if employee_id:
+        try:
+            emp = Employee.objects.get(id=employee_id)
+            context_parts.append(f"Employee: {emp.name}, Dept: {emp.department}, Role: {emp.role}")
+            meetings = Meeting.objects.filter(employee=emp)
+            for m in meetings:
+                context_parts.append(f"Meeting summary: {m.summary}")
+                context_parts.append(f"Sentiment: {m.sentiment_score}")
+        except Employee.DoesNotExist:
+            pass
+        try:
+            insight = EmployeeInsight.objects.get(employee_id=employee_id)
+            context_parts.append(f"Insights: {insight.concerns}, Burnout risk: {insight.burnout_risk}")
+        except EmployeeInsight.DoesNotExist:
+            pass
+    else:
+        # General context: last 5 meeting summaries
+        for m in Meeting.objects.order_by('-date')[:5]:
+            context_parts.append(f"Meeting summary: {m.summary}")
+    context = '\n'.join(context_parts)
+    assistant = AssistantService()
+    answer = assistant.ask(question, context=context)
+    return Response({'answer': answer})
 
 from ai_services.embedding_service import EmbeddingService
 from ai_services.vector_store import FaissVectorStore
