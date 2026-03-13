@@ -11,6 +11,8 @@ class EmployeeInsightSerializer(serializers.ModelSerializer):
 
 
 class MeetingEmbeddingSerializer(serializers.ModelSerializer):
+    embedding = serializers.ListField(child=serializers.FloatField(), read_only=True)
+
     class Meta:
         model = MeetingEmbedding
         fields = ['id', 'meeting', 'created_at']
