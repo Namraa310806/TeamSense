@@ -4,8 +4,9 @@ from rest_framework import status
 from django.db.models import Avg, Count
 from employees.models import Employee
 from meetings.models import Meeting
-from .models import EmployeeInsight
-from .serializers import EmployeeInsightSerializer
+from .models import EmployeeInsight, MeetingEmbedding
+from .serializers import EmployeeInsightSerializer, MeetingEmbeddingSerializer
+from rest_framework.views import APIView
 
 
 @api_view(['GET'])
@@ -89,3 +90,13 @@ def attrition_risk(request, employee_id):
         'employee_name': employee.name,
         **risk_data,
     })
+
+
+class MeetingEmbeddingAPI(APIView):
+    def get(self, request, meeting_id):
+        """Get embedding for a meeting."""
+        try:
+            embedding = MeetingEmbedding.objects.get(meeting_id=meeting_id)
+        except MeetingEmbedding.DoesNotExist:
+            return Response({'error': 'No embedding found for this meeting'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(MeetingEmbeddingSerializer(embedding).data)
