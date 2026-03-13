@@ -79,4 +79,5 @@ class SemanticSearchAPI(APIView):
             return Response({'error': 'Query is required.'}, status=status.HTTP_400_BAD_REQUEST)
         query_vec = embedding_service.embed_text(query)
         results = vector_store.search(query_vec, top_k=5)
+        # Add type and reference info to each result
         return Response({'results': results})
