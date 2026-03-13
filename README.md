@@ -18,14 +18,12 @@ docker-compose up --build
 ```
 
 - Frontend: http://localhost:3000
-- Backend API: http://localhost:8000/api/
 
 ### Local Development
 
 **Backend:**
 ```bash
 cd backend
-pip install -r requirements.txt
 python manage.py migrate
 python manage.py seed_data
 python manage.py runserver
@@ -42,9 +40,6 @@ npm run dev
 ```bash
 cd backend
 celery -A teamsense worker -l info
-```
-
-## 📡 API Endpoints
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
