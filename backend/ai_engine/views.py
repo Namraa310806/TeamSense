@@ -1,6 +1,7 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.views import APIView
 from ai_services.embedding_service import EmbeddingService
 from ai_services.vector_store import FaissVectorStore
 from ai_services.assistant_service import AssistantService
@@ -60,23 +61,39 @@ def hr_assistant(request):
     answer = assistant.ask(question, context=context)
     return Response({'answer': answer})
 
-from ai_services.embedding_service import EmbeddingService
-from ai_services.vector_store import FaissVectorStore
-from rest_framework.views import APIView
-
 # Example: 384 for all-MiniLM-L6-v2
 EMBEDDING_DIM = 384
 VECTOR_INDEX_PATH = 'faiss.index'
 META_PATH = 'faiss_meta.pkl'
 
-embedding_service = EmbeddingService()
-vector_store = FaissVectorStore(dim=EMBEDDING_DIM, index_path=VECTOR_INDEX_PATH, meta_path=META_PATH)
+_embedding_service = None
+_vector_store = None
+
+
+def _get_embedding_service():
+    global _embedding_service
+    if _embedding_service is None:
+        _embedding_service = EmbeddingService()
+    return _embedding_service
+
+
+def _get_vector_store():
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = FaissVectorStore(
+            dim=EMBEDDING_DIM,
+            index_path=VECTOR_INDEX_PATH,
+            meta_path=META_PATH,
+        )
+    return _vector_store
 
 class SemanticSearchAPI(APIView):
     def post(self, request):
         query = request.data.get('query')
         if not query:
             return Response({'error': 'Query is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        embedding_service = _get_embedding_service()
+        vector_store = _get_vector_store()
         query_vec = embedding_service.embed_text(query)
         results = vector_store.search(query_vec, top_k=5)
         # Add type and reference info to each result
