@@ -104,6 +104,23 @@ export const uploadCsvFeedback = (file) => {
   });
 };
 
+export const ingestSlackData = (payload) => api.post('/ingestion/slack/', payload);
+
+export const ingestGoogleFormsData = (payload) => api.post('/ingestion/google-forms/', payload);
+
+export const uploadIngestionDocument = ({ file, employeeId, participants }) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  if (employeeId) formData.append('employee_id', String(employeeId));
+  if (participants) formData.append('participants', participants);
+  return api.post('/ingestion/upload-document/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const fetchIngestionOverview = () => api.get('/ingestion/overview/');
+export const fetchIngestionJobs = () => api.get('/ingestion/jobs/');
+
 export const fetchFeedback = () => api.get('/ingestion/feedback/');
 
 // Insights
