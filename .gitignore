@@ -27,3 +27,6 @@ ENV/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Frontend build outputs
+frontend/dist/
