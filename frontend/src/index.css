@@ -10,8 +10,8 @@
 
 body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: #0f172a;
-  color: #e2e8f0;
+  background-color: #f0fdf4;
+  color: #1e293b;
   min-height: 100vh;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -22,34 +22,33 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: #f0fdf4;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #4338ca;
+  background: #86efac;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6366f1;
+  background: #22c55e;
 }
 
 .glass-card {
-  background: rgba(30, 41, 59, 0.7);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(99, 102, 241, 0.1);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
   border-radius: 16px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.06);
   transition: all 0.3s ease;
 }
 
 .glass-card:hover {
-  border-color: rgba(99, 102, 241, 0.3);
-  box-shadow: 0 8px 32px rgba(99, 102, 241, 0.1);
+  border-color: #bbf7d0;
+  box-shadow: 0 4px 16px rgba(34, 197, 94, 0.10);
 }
 
 .gradient-text {
-  background: linear-gradient(135deg, #818cf8, #06b6d4);
+  background: linear-gradient(135deg, #16a34a, #22c55e);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -65,7 +64,7 @@ body {
   inset: 0;
   border-radius: 16px;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(6, 182, 212, 0.3));
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.3), rgba(16, 185, 129, 0.3));
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -73,7 +72,7 @@ body {
 }
 
 .stat-glow {
-  box-shadow: 0 0 30px rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 24px rgba(34, 197, 94, 0.08);
 }
 
 .sentiment-bar {
@@ -90,7 +89,7 @@ body {
 }
 
 .loading-shimmer {
-  background: linear-gradient(90deg, transparent, rgba(99, 102, 241, 0.1), transparent);
+  background: linear-gradient(90deg, transparent, rgba(34, 197, 94, 0.08), transparent);
   animation: shimmer 1.5s infinite;
 }
 
@@ -100,11 +99,11 @@ body {
 }
 
 .chat-bubble-ai {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.15), rgba(6, 182, 212, 0.1));
-  border: 1px solid rgba(99, 102, 241, 0.2);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
 }
 
 .chat-bubble-user {
-  background: linear-gradient(135deg, rgba(99, 102, 241, 0.3), rgba(67, 56, 202, 0.3));
-  border: 1px solid rgba(99, 102, 241, 0.3);
+  background: linear-gradient(135deg, #16a34a, #22c55e);
+  border: 1px solid #15803d;
 }

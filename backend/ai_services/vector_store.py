@@ -1,5 +1,5 @@
 """
-Vector Store using FAISS for Embeddings
+Vector Store using numpy-based in-memory vectors persisted with pickle
 """
 import numpy as np
 import os
