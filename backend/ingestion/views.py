@@ -8,6 +8,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from accounts.permissions import IsAdmin, IsCHR, IsExecutive, IsHR
 from analytics.models import SentimentInsight
 from employees.models import Employee
 from meetings.models import Meeting
@@ -27,6 +28,25 @@ from .tasks import (
 )
 
 
+def _user_org(user):
+    if hasattr(user, 'profile'):
+        return user.profile.organization
+    return None
+
+
+def _is_admin(user):
+    return hasattr(user, 'profile') and user.profile.role == 'ADMIN'
+
+
+def _scope_queryset_for_user(queryset, request_user, organization_field='organization'):
+    if _is_admin(request_user):
+        return queryset
+    org = _user_org(request_user)
+    if org is None:
+        return queryset
+    return queryset.filter(**{organization_field: org})
+
+
 def _create_job(source, request, metadata=None):
     return IngestionJob.objects.create(
         source=source,
@@ -37,7 +57,7 @@ def _create_job(source, request, metadata=None):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def upload_feedback_csv(request):
     uploaded = request.FILES.get('file')
     if not uploaded:
@@ -58,7 +78,7 @@ def upload_feedback_csv(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def ingest_slack(request):
     serializer = SlackIngestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -78,6 +98,14 @@ def ingest_slack(request):
             }
         ]
 
+    for idx, message in enumerate(messages):
+        email = (message.get('employee_email') or message.get('email') or '').strip()
+        if not email:
+            return Response(
+                {'error': f'Missing employee email in Slack message at index {idx}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     job = _create_job(IngestionJob.SOURCE_SLACK, request, {'channel': channel, 'message_count': len(messages)})
     ingest_slack_messages_task.delay(messages, channel, request.user.id, job.id)
 
@@ -92,7 +120,7 @@ def ingest_slack(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def ingest_google_forms(request):
     serializer = FormsIngestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
@@ -112,6 +140,14 @@ def ingest_google_forms(request):
             }
         ]
 
+    for idx, response in enumerate(responses):
+        email = (response.get('employee_email') or response.get('email') or '').strip()
+        if not email:
+            return Response(
+                {'error': f'Missing employee email in form response at index {idx}.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
     job = _create_job(IngestionJob.SOURCE_FORMS, request, {'form_id': form_id, 'response_count': len(responses)})
     ingest_google_forms_task.delay(responses, form_id, request.user.id, job.id)
 
@@ -126,11 +162,15 @@ def ingest_google_forms(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def upload_document(request):
     uploaded = request.FILES.get('file')
     if not uploaded:
         return Response({'error': 'No file provided.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    extension = uploaded.name.rsplit('.', 1)[-1].lower() if '.' in uploaded.name else ''
+    if extension not in {'pdf', 'txt', 'docx'}:
+        return Response({'error': 'Invalid document format. Allowed: pdf, txt, docx.'}, status=status.HTTP_400_BAD_REQUEST)
 
     participants = request.data.getlist('participants') if hasattr(request.data, 'getlist') else request.data.get('participants', [])
     if isinstance(participants, str):
@@ -157,24 +197,32 @@ def upload_document(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def feedback_list(request):
-    feedbacks = Feedback.objects.select_related('employee').all()[:200]
+    feedbacks = Feedback.objects.select_related('employee').all()
+    feedbacks = _scope_queryset_for_user(feedbacks, request.user, 'employee__organization')[:200]
     return Response(FeedbackSerializer(feedbacks, many=True).data)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def ingestion_overview(request):
-    jobs = IngestionJob.objects.all()[:15]
-    avg_sentiment = SentimentInsight.objects.aggregate(avg=Avg('sentiment_score')).get('avg')
+    jobs_qs = _scope_queryset_for_user(IngestionJob.objects.select_related('created_by').all(), request.user, 'created_by__profile__organization')
+    jobs = jobs_qs[:15]
+    employee_qs = _scope_queryset_for_user(Employee.objects.all(), request.user)
+    feedback_qs = _scope_queryset_for_user(Feedback.objects.all(), request.user, 'employee__organization')
+    meeting_qs = _scope_queryset_for_user(Meeting.objects.all(), request.user)
+    insight_qs = _scope_queryset_for_user(SentimentInsight.objects.all(), request.user, 'employee__organization')
+
+    avg_sentiment = insight_qs.aggregate(avg=Avg('sentiment_score')).get('avg')
 
     data = {
         'counts': {
-            'employees': Employee.objects.count(),
-            'feedback': Feedback.objects.count(),
-            'meetings': Meeting.objects.count(),
-            'sentiment_insights': SentimentInsight.objects.count(),
+            'employees': employee_qs.count(),
+            'feedback': feedback_qs.count(),
+            'meetings': meeting_qs.count(),
+            'sentiment_insights': insight_qs.count(),
+            'insights': insight_qs.count(),
         },
         'avg_sentiment': round(avg_sentiment, 3) if avg_sentiment is not None else None,
         'jobs': IngestionJobSerializer(jobs, many=True).data,
@@ -199,7 +247,44 @@ def ingestion_overview(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
+def ingestion_stats(request):
+    employee_qs = _scope_queryset_for_user(Employee.objects.all(), request.user)
+    feedback_qs = _scope_queryset_for_user(Feedback.objects.all(), request.user, 'employee__organization')
+    meeting_qs = _scope_queryset_for_user(Meeting.objects.all(), request.user)
+    insight_qs = _scope_queryset_for_user(SentimentInsight.objects.all(), request.user, 'employee__organization')
+
+    payload = {
+        'employees': employee_qs.count(),
+        'feedback': feedback_qs.count(),
+        'meetings': meeting_qs.count(),
+        'insights': insight_qs.count(),
+        'sentiment_insights': insight_qs.count(),
+    }
+    return Response(payload)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def ingestion_jobs(request):
-    jobs = IngestionJob.objects.all()[:50]
+    jobs = _scope_queryset_for_user(IngestionJob.objects.select_related('created_by').all(), request.user, 'created_by__profile__organization')[:50]
     return Response(IngestionJobSerializer(jobs, many=True).data)
+
+
+# API aliases for connector contracts
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
+def upload_feedback_csv_alias(request):
+    return upload_feedback_csv(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
+def ingest_google_forms_alias(request):
+    return ingest_google_forms(request)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
+def upload_document_alias(request):
+    return upload_document(request)
