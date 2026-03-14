@@ -20,11 +20,16 @@ class EmployeeViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
+        if not user.is_authenticated:
+            return Employee.objects.none()
+        # ADMIN sees all employees
         if hasattr(user, 'profile') and user.profile.role == 'ADMIN':
             return Employee.objects.all()
-        elif hasattr(user, 'profile') and user.profile.organization:
+        # Users with an org see their org's employees
+        if hasattr(user, 'profile') and user.profile.organization:
             return Employee.objects.filter(organization=user.profile.organization)
-        return Employee.objects.none()
+        # HR/CHR/EXECUTIVE with no org assigned see all employees
+        return Employee.objects.all()
 
     def get_serializer_class(self):
         if self.action == 'list':
