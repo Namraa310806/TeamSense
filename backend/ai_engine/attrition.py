@@ -1,23 +1,73 @@
-"""Attrition risk prediction using rule-based heuristics."""
+"""Attrition risk prediction using CatBoost ML model trained on synthetic data mimicking original rules."""
 import logging
-from datetime import timedelta
+import os
+import numpy as np
+import pandas as pd
+from catboost import CatBoostClassifier
+from sklearn.model_selection import train_test_split
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
+MODEL_PATH = 'models/attrition_model.cbm'
+
+def load_or_train_model():
+    """Load CatBoost model or train/save new one."""
+    model_path = os.path.join(os.path.dirname(__file__), MODEL_PATH)
+    
+    if os.path.exists(model_path):
+        logger.info("Loading CatBoost model.")
+        model = CatBoostClassifier()
+        model.load_model(model_path)
+        return model
+    
+    logger.info("Training CatBoost model.")
+    
+    np.random.seed(42)
+    n_samples = 2000
+    
+    # Synthetic data with variance for balanced classes (~40% high risk)
+    data = {
+        'avg_sentiment': np.random.normal(0.4, 0.25, n_samples).clip(0,1),  # Lower mean for risk
+        'sentiment_decline': np.random.normal(0.15, 0.2, n_samples).clip(0,1),
+        'concern_count': np.random.poisson(2, n_samples),  # Higher mean
+        'days_since_last': np.random.exponential(45, n_samples),
+        'burnout_risk': np.random.normal(0.45, 0.25, n_samples).clip(0,1),
+        'meeting_count': np.random.poisson(4, n_samples),
+    }
+    df = pd.DataFrame(data)
+    
+    # Risk score simulation (weighted)
+    df['risk_score'] = (
+        max(0, 0.5 - df['avg_sentiment']) * 0.35 +
+        df['sentiment_decline'] * 0.25 +
+        np.minimum(df['concern_count'] * 0.2, 1.0) * 0.2 +
+        np.minimum(df['days_since_last'] / 120, 1.0) * 0.1 +
+        df['burnout_risk'] * 0.15 +
+        np.minimum(3 / (df['meeting_count'] + 1), 1.0) * 0.1
+    ).clip(0,1)
+    
+    df['label'] = (df['risk_score'] > 0.45).astype(int)
+    logger.info(f"Labels balance: {df['label'].mean():.1%} positive")
+    
+    feature_names = ['avg_sentiment', 'sentiment_decline', 'concern_count', 
+                     'days_since_last', 'burnout_risk', 'meeting_count']
+    X = df[feature_names]
+    y = df['label']
+    
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    model = CatBoostClassifier(iterations=300, learning_rate=0.1, depth=6, verbose=0, random_seed=42)
+    model.fit(X_train, y_train, eval_set=(X_test, y_test))
+    
+    os.makedirs(os.path.dirname(model_path), exist_ok=True)
+    model.save_model(model_path)
+    logger.info(f"Model saved to {model_path}")
+    
+    return model
 
 def calculate_attrition_risk(employee_id: int) -> dict:
-    """Calculate attrition risk score for an employee.
-
-    Uses a rule-based approach based on:
-    - Sentiment trends (declining sentiment)
-    - Concern/complaint frequency
-    - Meeting engagement (frequency of meetings)
-    - Burnout risk from insights
-
-    Returns:
-        dict with risk_score (0-1), risk_level, and contributing factors
-    """
+    """API-compatible risk calculation."""
     from meetings.models import Meeting
     from analytics.models import EmployeeInsight
     from employees.models import Employee
@@ -28,71 +78,46 @@ def calculate_attrition_risk(employee_id: int) -> dict:
         return {'risk_score': 0.0, 'risk_level': 'unknown', 'factors': []}
 
     meetings = Meeting.objects.filter(employee=employee).order_by('-date')
-    factors = []
-    risk_score = 0.0
-
     if not meetings.exists():
         return {
-            'risk_score': 0.1,
+            'risk_score': 0.0,
             'risk_level': 'low',
-            'factors': ['No meeting data available for assessment'],
+            'factors': ['No meeting data available'],
         }
 
-    # Factor 1: Average sentiment (weight: 0.3)
+    model = load_or_train_model()
+    
+    # Features
     sentiment_scores = [m.sentiment_score for m in meetings if m.sentiment_score is not None]
-    if sentiment_scores:
-        avg_sentiment = sum(sentiment_scores) / len(sentiment_scores)
-        sentiment_risk = max(0, (0.5 - avg_sentiment) * 2)  # Below 0.5 → risk
-        risk_score += sentiment_risk * 0.3
-        if avg_sentiment < 0.4:
-            factors.append(f'Low average sentiment ({avg_sentiment:.2f})')
-
-    # Factor 2: Sentiment trend (weight: 0.25)
+    avg_sentiment = sum(sentiment_scores) / len(sentiment_scores) if sentiment_scores else 0.5
+    
+    sentiment_decline = 0.0
     if len(sentiment_scores) >= 3:
-        recent = sentiment_scores[:3]
-        older = sentiment_scores[3:6] if len(sentiment_scores) > 3 else sentiment_scores[:3]
-        recent_avg = sum(recent) / len(recent)
-        older_avg = sum(older) / len(older)
-        if recent_avg < older_avg:
-            decline = older_avg - recent_avg
-            risk_score += min(decline * 2, 1.0) * 0.25
-            if decline > 0.1:
-                factors.append(f'Declining sentiment trend (-{decline:.2f})')
-
-    # Factor 3: Concern frequency (weight: 0.2)
-    concern_keywords = ['concern', 'frustrated', 'unhappy', 'leaving', 'quit', 'resign',
-                        'burnout', 'overwhelmed', 'undervalued', 'unfair']
-    concern_count = 0
-    for meeting in meetings:
-        text_lower = meeting.transcript.lower()
-        concern_count += sum(1 for kw in concern_keywords if kw in text_lower)
-
-    if concern_count > 0:
-        concern_risk = min(concern_count * 0.15, 1.0)
-        risk_score += concern_risk * 0.2
-        if concern_count >= 3:
-            factors.append(f'Multiple concerns raised ({concern_count} mentions)')
-
-    # Factor 4: Meeting recency (weight: 0.1)
+        recent_avg = sum(sentiment_scores[:3]) / 3
+        older_len = min(3, len(sentiment_scores)-3)
+        older_avg = sum(sentiment_scores[3:3+older_len]) / older_len if older_len else recent_avg
+        sentiment_decline = max(0, older_avg - recent_avg)
+    
+    concern_keywords = ['concern', 'frustrated', 'unhappy', 'leaving', 'quit', 'resign', 'burnout', 'overwhelmed', 'undervalued', 'unfair']
+    concern_count = sum(1 for m in meetings for kw in concern_keywords if kw in m.transcript.lower())
+    
     last_meeting = meetings.first()
-    if last_meeting:
-        days_since = (timezone.now().date() - last_meeting.date).days
-        if days_since > 60:
-            risk_score += 0.1
-            factors.append(f'No recent meetings ({days_since} days ago)')
-
-    # Factor 5: Burnout risk from insights (weight: 0.15)
+    days_since_last = (timezone.now().date() - last_meeting.date).days if last_meeting else 0
+    
+    burnout_risk = 0.0
     try:
         insight = EmployeeInsight.objects.get(employee=employee)
-        if insight.burnout_risk > 0.5:
-            risk_score += insight.burnout_risk * 0.15
-            factors.append(f'Elevated burnout risk ({insight.burnout_risk:.2f})')
+        burnout_risk = getattr(insight, 'burnout_risk', 0.0)
     except EmployeeInsight.DoesNotExist:
         pass
-
-    # Clamp and categorize
-    risk_score = round(min(max(risk_score, 0.0), 1.0), 3)
-
+    
+    meeting_count = len(meetings)
+    
+    features = np.array([[avg_sentiment, sentiment_decline, concern_count, days_since_last, burnout_risk, meeting_count]])
+    
+    risk_score = model.predict_proba(features)[0][1]
+    risk_score = round(float(risk_score), 3)
+    
     if risk_score >= 0.7:
         risk_level = 'critical'
     elif risk_score >= 0.5:
@@ -101,12 +126,24 @@ def calculate_attrition_risk(employee_id: int) -> dict:
         risk_level = 'medium'
     else:
         risk_level = 'low'
-
+    
+    factors = []
+    if avg_sentiment < 0.4:
+        factors.append(f'Low average sentiment ({avg_sentiment:.2f})')
+    if sentiment_decline > 0.1:
+        factors.append(f'Declining sentiment trend (-{sentiment_decline:.2f})')
+    if concern_count >= 3:
+        factors.append(f'Multiple concerns ({concern_count})')
+    if days_since_last > 60:
+        factors.append(f'No recent meetings ({days_since_last} days)')
+    if burnout_risk > 0.5:
+        factors.append(f'High burnout risk ({burnout_risk:.2f})')
     if not factors:
-        factors.append('No significant risk factors detected')
-
+        factors.append('No major risk factors')
+    
     return {
         'risk_score': risk_score,
         'risk_level': risk_level,
         'factors': factors,
     }
+
