@@ -59,6 +59,9 @@ class Meeting(models.Model):
 class MeetingParticipant(models.Model):
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='participants')
     employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='meeting_participations')
+    speaking_turns = models.PositiveIntegerField(default=0)
+    sentiment_score = models.FloatField(default=0.0)
+    engagement_score = models.FloatField(default=0.0)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -14,6 +14,7 @@ from django.utils import timezone
 
 from ai_engine.sentiment import analyze_sentiment, get_emotion_breakdown
 from ai_engine.summarizer import summarize_transcript
+from ai_services.emotion_service import EmotionService
 from analytics.models import SentimentInsight
 from employees.models import Employee
 from meetings.models import Meeting, MeetingParticipant
@@ -21,6 +22,14 @@ from meetings.models import Meeting, MeetingParticipant
 from .models import Document, Feedback, IngestionJob
 
 logger = logging.getLogger(__name__)
+_EMOTION_SERVICE = None
+
+
+def _get_emotion_service():
+    global _EMOTION_SERVICE
+    if _EMOTION_SERVICE is None:
+        _EMOTION_SERVICE = EmotionService()
+    return _EMOTION_SERVICE
 
 
 def _maybe_fetch_slack_messages(channel):
@@ -163,12 +172,14 @@ def _upsert_employee(payload):
 
 
 def _create_sentiment_insight(employee, source_type, score, text):
+    emotion_distribution = _get_emotion_service().analyze(text or '')
     SentimentInsight.objects.create(
         employee=employee,
         source_type=source_type,
         sentiment_score=score,
         insights={
             'emotion_breakdown': get_emotion_breakdown(text),
+            'transformer_emotions': emotion_distribution,
             'length': len(text),
         },
         timestamp=timezone.now(),

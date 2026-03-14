@@ -129,6 +129,21 @@ def dashboard(request):
         )
     ]
 
+    top_sentiment_people = [
+        {
+            'employee_id': row['employee'],
+            'employee_name': row['employee__name'],
+            'avg_sentiment': round(float(row['avg_sentiment'] or 0.0), 4),
+            'meeting_count': int(row['meeting_count'] or 0),
+        }
+        for row in (
+            scoped_employee_insights
+            .values('employee', 'employee__name')
+            .annotate(avg_sentiment=Avg('sentiment_score'), meeting_count=Count('meeting'))
+            .order_by('-avg_sentiment', '-meeting_count')[:5]
+        )
+    ]
+
     return Response({
         'employee_count': employee_count,
         'meeting_count': meeting_count,
@@ -140,6 +155,7 @@ def dashboard(request):
             'employee_engagement_chart': top_contributors,
             'top_contributors': top_contributors,
             'low_participation_employees': low_participation,
+            'top_sentiment_people': top_sentiment_people,
         },
     })
 

@@ -13,6 +13,9 @@ class MeetingSerializer(serializers.ModelSerializer):
     participant_ids = serializers.SerializerMethodField()
     participant_names = serializers.SerializerMethodField()
     organization_name = serializers.CharField(source='organization.organization_name', read_only=True)
+    processing_status = serializers.CharField(source='transcript_status', read_only=True)
+    transcript_text = serializers.CharField(source='transcript', read_only=True)
+    overall_sentiment = serializers.FloatField(source='sentiment_score', read_only=True)
 
     def get_participant_ids(self, obj):
         return [p.employee_id for p in obj.participants.select_related('employee').all()]
@@ -32,14 +35,17 @@ class MeetingSerializer(serializers.ModelSerializer):
             'uploaded_by',
             'meeting_file',
             'transcript_status',
+            'processing_status',
             'employee',
             'employee_name',
             'participant_ids',
             'participant_names',
             'date',
             'transcript',
+            'transcript_text',
             'summary',
             'sentiment_score',
+            'overall_sentiment',
             'key_topics',
             'created_at',
             'updated_at',
@@ -106,19 +112,73 @@ class MeetingUploadSerializer(serializers.Serializer):
     participants = serializers.JSONField(required=False)
     meeting_file = serializers.FileField(required=False)
     transcript = serializers.CharField(required=False, allow_blank=True)
+    transcript_text = serializers.CharField(required=False, allow_blank=True)
+
+    ALLOWED_EXTENSIONS = {'.mp3', '.wav', '.mp4', '.m4a'}
+    ALLOWED_MIME_TYPES = {
+        'audio/mpeg',
+        'audio/mp3',
+        'audio/wav',
+        'audio/x-wav',
+        'audio/mp4',
+        'audio/x-m4a',
+        'video/mp4',
+        'application/octet-stream',  # browsers may fallback to this
+    }
+    MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024
+
+    def _normalize_participants(self, participants):
+        if participants is None:
+            return []
+        if isinstance(participants, str):
+            raw = participants.strip()
+            if not raw:
+                return []
+            try:
+                import json
+                parsed = json.loads(raw)
+                participants = parsed
+            except Exception:
+                participants = [p.strip() for p in raw.split(',') if p.strip()]
+        if not isinstance(participants, list):
+            raise serializers.ValidationError('participants must be a list of employee IDs.')
+
+        normalized = []
+        for value in participants:
+            try:
+                normalized.append(int(value))
+            except (TypeError, ValueError):
+                continue
+        return normalized
 
     def validate(self, attrs):
-        participants = attrs.get('participants')
-        if participants is None or not isinstance(participants, list) or len(participants) == 0:
+        participants = self._normalize_participants(attrs.get('participants'))
+        attrs['participants'] = participants
+        if len(participants) == 0:
             raise serializers.ValidationError('participants must be a non-empty list of employee IDs.')
 
-        if attrs.get('meeting_file') is None and not attrs.get('transcript'):
-            raise serializers.ValidationError('Provide either meeting_file or transcript.')
+        transcript = (attrs.get('transcript_text') or attrs.get('transcript') or '').strip()
+        attrs['transcript'] = transcript
+
+        if attrs.get('meeting_file') is None and not transcript:
+            raise serializers.ValidationError('Provide either meeting_file or transcript_text.')
 
         if attrs.get('meeting_file') is not None:
-            filename = attrs['meeting_file'].name.lower()
-            if not (filename.endswith('.mp3') or filename.endswith('.wav') or filename.endswith('.mp4') or filename.endswith('.m4a')):
-                raise serializers.ValidationError('meeting_file must be mp3, wav, mp4, or m4a.')
+            upload = attrs['meeting_file']
+            filename = (upload.name or '').lower()
+
+            import os
+            _, ext = os.path.splitext(filename)
+            if ext not in self.ALLOWED_EXTENSIONS:
+                raise serializers.ValidationError('Invalid file format. Allowed: mp3, wav, mp4, m4a.')
+
+            mime_type = (getattr(upload, 'content_type', '') or '').lower()
+            if mime_type and mime_type not in self.ALLOWED_MIME_TYPES:
+                raise serializers.ValidationError('Invalid file format (MIME type not supported).')
+
+            size = int(getattr(upload, 'size', 0) or 0)
+            if size > self.MAX_FILE_SIZE_BYTES:
+                raise serializers.ValidationError('File too large. Maximum allowed size is 200MB.')
 
         return attrs
 

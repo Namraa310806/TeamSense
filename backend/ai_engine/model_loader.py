@@ -65,6 +65,15 @@ class ModelManager:
         return cls._get_or_create('summarizer_pipeline', build)
 
     @classmethod
+    def get_emotion_pipeline(cls):
+        def build():
+            model_name = 'j-hartmann/emotion-english-distilroberta-base'
+            logger.info('Loading emotion model: %s', model_name)
+            return pipeline('text-classification', model=model_name, top_k=None, device=-1)
+
+        return cls._get_or_create('emotion_pipeline', build)
+
+    @classmethod
     def get_embedding_bundle(cls):
         def build():
             model_name = 'sentence-transformers/all-MiniLM-L6-v2'

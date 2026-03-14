@@ -8,8 +8,8 @@ logger = logging.getLogger(__name__)
 def process_transcript_task(meeting_id):
     """Main pipeline task - processes transcript through all AI stages."""
     logger.info(f"Processing transcript for meeting {meeting_id}")
-    from ai_engine.pipeline import run_pipeline
-    run_pipeline(meeting_id)
+    from meetings.analysis_pipeline import run_text_meeting_intelligence_pipeline
+    run_text_meeting_intelligence_pipeline(meeting_id)
     logger.info(f"Pipeline completed for meeting {meeting_id}")
 
 

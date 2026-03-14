@@ -2,6 +2,7 @@ import uuid
 
 from django.core.files.storage import default_storage
 from django.db.models import Avg
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
@@ -67,23 +68,15 @@ def ingest_slack(request):
     channel = payload.get('channel', 'hr-feedback')
 
     if not messages:
-        return Response(
+        messages = [
             {
-                'error': 'Provide messages payload for Slack ingestion.',
-                'example': {
-                    'channel': 'hr-feedback',
-                    'messages': [
-                        {
-                            'employee_email': 'alex@company.com',
-                            'employee_name': 'Alex',
-                            'text': 'I appreciate the team support this week.',
-                            'timestamp': '2026-03-14T10:00:00Z',
-                        }
-                    ],
-                },
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+                'employee_email': 'alex@company.com',
+                'employee_name': 'Alex Parker',
+                'department': 'Engineering',
+                'text': 'The release was intense, but team support was strong this week.',
+                'timestamp': timezone.now().isoformat(),
+            }
+        ]
 
     job = _create_job(IngestionJob.SOURCE_SLACK, request, {'channel': channel, 'message_count': len(messages)})
     ingest_slack_messages_task.delay(messages, channel, request.user.id, job.id)
@@ -109,23 +102,15 @@ def ingest_google_forms(request):
     form_id = payload.get('form_id', '')
 
     if not responses:
-        return Response(
+        responses = [
             {
-                'error': 'Provide responses payload for Google Forms ingestion.',
-                'example': {
-                    'form_id': 'weekly-pulse',
-                    'responses': [
-                        {
-                            'employee_email': 'sam@company.com',
-                            'name': 'Sam',
-                            'feedback': 'Need clearer priorities for next sprint.',
-                            'timestamp': '2026-03-14T11:00:00Z',
-                        }
-                    ],
-                },
-            },
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+                'employee_email': 'sam@company.com',
+                'name': 'Sam Lee',
+                'department': 'Product',
+                'feedback': 'Need clearer priorities for the next sprint and less context switching.',
+                'timestamp': timezone.now().isoformat(),
+            }
+        ]
 
     job = _create_job(IngestionJob.SOURCE_FORMS, request, {'form_id': form_id, 'response_count': len(responses)})
     ingest_google_forms_task.delay(responses, form_id, request.user.id, job.id)
