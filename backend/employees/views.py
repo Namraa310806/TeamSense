@@ -9,6 +9,12 @@ from meetings.serializers import EmployeeMeetingInsightSerializer, MeetingSerial
 from analytics.models import EmployeeInsight
 from analytics.serializers import EmployeeInsightSerializer, MeetingAnalysisSerializer
 from analytics.models import MeetingAnalysis
+from django.db.models import Avg
+
+try:
+    from ingestion.models import Feedback
+except Exception:
+    Feedback = None
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
@@ -51,6 +57,18 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             data['insights'] = EmployeeInsightSerializer(insight).data
         except EmployeeInsight.DoesNotExist:
             data['insights'] = None
+
+        meeting_insight_qs = EmployeeMeetingInsight.objects.filter(employee=employee)
+        data['employee_insights'] = {
+            'meetings_attended': meetings.count(),
+            'meeting_sentiment_avg': round(float(meeting_insight_qs.aggregate(avg=Avg('sentiment_score')).get('avg') or 0.0), 4),
+            'engagement_score': round(float(meeting_insight_qs.aggregate(avg=Avg('engagement_score')).get('avg') or 0.0), 4),
+            'feedback_sentiment': 0.0,
+        }
+
+        if Feedback is not None:
+            fb_avg = Feedback.objects.filter(employee=employee).aggregate(avg=Avg('sentiment')).get('avg')
+            data['employee_insights']['feedback_sentiment'] = round(float(fb_avg or 0.0), 4)
 
         return Response(data)
 

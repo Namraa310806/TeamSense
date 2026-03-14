@@ -102,7 +102,7 @@ def upload_meeting(request):
     """
     serializer = MeetingUploadSerializer(data=request.data)
     if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     data = serializer.validated_data
     try:
@@ -115,6 +115,8 @@ def upload_meeting(request):
 
     owner = employees[0]
     meeting_date = data.get('meeting_date', timezone.now().date())
+    transcript_text = (data.get('transcript') or '').strip()
+    meeting_file = data.get('meeting_file')
 
     meeting = Meeting.objects.create(
         organization=organization,
@@ -122,20 +124,21 @@ def upload_meeting(request):
         department=data.get('department', owner.department),
         meeting_date=meeting_date,
         uploaded_by=request.user,
-        meeting_file=data.get('meeting_file'),
+        meeting_file=meeting_file,
         transcript_status=Meeting.TRANSCRIPT_STATUS_PENDING,
         employee=owner,
         date=meeting_date,
-        transcript=data.get('transcript', ''),
+        transcript=transcript_text,
     )
     _attach_participants(meeting, employees)
 
-    if meeting.meeting_file:
+    # transcript_text always has priority when both transcript and recording are submitted.
+    if transcript_text:
+        pipeline_status = schedule_text_meeting_pipeline(meeting.id)
+    elif meeting.meeting_file:
         pipeline_status = schedule_uploaded_meeting_pipeline(meeting.id)
     else:
-        pipeline_status = schedule_text_meeting_pipeline(meeting.id)
-        meeting.transcript_status = Meeting.TRANSCRIPT_STATUS_COMPLETED
-        meeting.save(update_fields=['transcript_status', 'updated_at'])
+        return Response({'error': 'Provide transcript_text or meeting_file.'}, status=status.HTTP_400_BAD_REQUEST)
 
     return Response(
         {
@@ -321,7 +324,7 @@ def upload_meeting_recording(request):
 
     proxy_serializer = MeetingUploadSerializer(data=wrapped_payload)
     if not proxy_serializer.is_valid():
-        return Response(proxy_serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({'error': proxy_serializer.errors}, status=status.HTTP_400_BAD_REQUEST)
 
     data = proxy_serializer.validated_data
     try:

@@ -5,6 +5,19 @@ import { Brain, Mail, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
 
 const DEMO_AUTH_ONLY = false;
 
+const toBase64Url = (obj) =>
+  btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+
+const makeDemoJwt = () => {
+  const header = toBase64Url({ alg: 'HS256', typ: 'JWT' });
+  const payload = toBase64Url({
+    sub: 'demo-user',
+    role: 'DEMO',
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7,
+  });
+  return `${header}.${payload}.demo`;
+};
+
 function Login() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -28,8 +41,17 @@ function Login() {
 
   const completeJwtLogin = (payload) => {
     const { name: userName, email: userEmail, role, token } = payload;
+    localStorage.setItem('demo_mode', 'false');
     localStorage.setItem('user', JSON.stringify({ name: userName, email: userEmail, role }));
     localStorage.setItem('access_token', token);
+    navigate('/');
+  };
+
+  const completeDemoFallbackLogin = (inputName, inputEmail) => {
+    const user = buildDemoUser(inputName, inputEmail);
+    localStorage.setItem('demo_mode', 'true');
+    localStorage.setItem('user', JSON.stringify(user));
+    localStorage.setItem('access_token', makeDemoJwt());
     navigate('/');
   };
 
@@ -39,10 +61,7 @@ function Login() {
     setError('');
 
     if (DEMO_AUTH_ONLY) {
-      const user = buildDemoUser(name, email);
-      localStorage.setItem('user', JSON.stringify(user));
-      localStorage.setItem('access_token', 'demo-token');
-      navigate('/');
+      completeDemoFallbackLogin(name, email);
       setLoading(false);
       return;
     }
@@ -71,8 +90,8 @@ function Login() {
       });
       completeJwtLogin(res.data);
     } catch (err) {
-      const msg = err.response?.data?.error || 'Demo login failed. Please verify backend is running.';
-      setError(msg);
+      // Demo access should still work even when backend login API is unavailable.
+      completeDemoFallbackLogin(demoName, demoEmail);
     } finally {
       setLoading(false);
     }

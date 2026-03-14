@@ -75,6 +75,7 @@ function MeetingAnalysis() {
 
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState([]);
   const [meetingFile, setMeetingFile] = useState(null);
+  const [transcriptText, setTranscriptText] = useState('');
   const [meetingTitle, setMeetingTitle] = useState('Weekly Team Sync');
   const [department, setDepartment] = useState('Engineering');
   const [meetingDate, setMeetingDate] = useState('');
@@ -193,14 +194,19 @@ function MeetingAnalysis() {
       setError('Please select at least one employee participant.');
       return;
     }
-    if (!meetingFile) {
-      setError('Please upload a recording file (mp3, wav, mp4).');
+    if (!meetingFile && !transcriptText.trim()) {
+      setError('Please provide transcript text or upload a recording (mp3, wav, mp4).');
       return;
     }
 
     const formData = new FormData();
     formData.append('participants', JSON.stringify(selectedEmployeeIds));
-    formData.append('meeting_file', meetingFile);
+    if (meetingFile) {
+      formData.append('meeting_file', meetingFile);
+    }
+    if (transcriptText.trim()) {
+      formData.append('transcript_text', transcriptText.trim());
+    }
     formData.append('meeting_title', meetingTitle);
     formData.append('department', department);
     if (meetingDate) formData.append('meeting_date', meetingDate);
@@ -211,6 +217,7 @@ function MeetingAnalysis() {
       const response = await uploadMeeting(formData);
       const createdId = response?.data?.meeting?.id;
       setMeetingFile(null);
+      setTranscriptText('');
       await loadMeetings(createdId);
       if (createdId) await loadMeetingDetails(createdId);
     } catch (err) {
@@ -307,6 +314,19 @@ function MeetingAnalysis() {
                 className="hidden"
               />
             </label>
+            <p className="text-xs text-slate-500 mt-1">Optional when transcript is provided.</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-2">Transcript Text (optional)</label>
+            <textarea
+              value={transcriptText}
+              onChange={(e) => setTranscriptText(e.target.value)}
+              rows={5}
+              placeholder="Paste transcript text here. If added, this will be used directly and speech-to-text is skipped."
+              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-slate-800 placeholder-gray-400 focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20"
+            />
+            <p className="text-xs text-slate-500 mt-1">Transcript has priority when both transcript and recording are provided.</p>
           </div>
 
           {error && <p className="text-sm text-rose-600">{error}</p>}

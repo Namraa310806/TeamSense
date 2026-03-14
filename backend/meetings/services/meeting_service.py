@@ -27,7 +27,7 @@ def schedule_text_meeting_pipeline(meeting_id: int) -> str:
         return 'queued'
     except Exception as exc:
         logger.warning('Celery transcript queue failed for meeting %s: %s. Running sync fallback.', meeting_id, exc)
-        from ai_engine.pipeline import run_pipeline
+        from meetings.analysis_pipeline import run_text_meeting_intelligence_pipeline
 
-        run_pipeline(meeting_id)
+        run_text_meeting_intelligence_pipeline(meeting_id)
         return 'completed'
