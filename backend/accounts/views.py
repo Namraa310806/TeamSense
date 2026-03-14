@@ -3,9 +3,9 @@ from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Organization, Profile
-from .serializers import OrganizationSerializer, ProfileSerializer
-from .permissions import IsAdmin, IsExecutive, IsHR
+from .models import Organization, Profile, HRUser
+from .serializers import OrganizationSerializer, ProfileSerializer, HRUserSerializer
+from .permissions import IsAdmin, IsExecutive, IsHR, IsCHR
 from django.contrib.auth import get_user_model
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
@@ -26,7 +26,7 @@ User = get_user_model()
 
 def normalize_role(role: str) -> str:
     role_value = (role or '').strip().upper()
-    if role_value in {'ADMIN', 'HR', 'EMPLOYEE'}:
+    if role_value in {'ADMIN', 'HR', 'EMPLOYEE', 'CHR', 'EXECUTIVE'}:
         return role_value
     return 'EMPLOYEE'
 
@@ -36,6 +36,8 @@ def detect_role(email: str):
     email_lower = email.strip().lower()
     if email_lower in ADMIN_EMAILS:
         return 'ADMIN'
+    if email_lower.endswith('@chr.ac.in'):
+        return 'CHR'
     if email_lower.endswith('@hr.ac.in'):
         return 'HR'
     # Default all other users to employee role (mapped to HR permissions profile).
@@ -79,6 +81,14 @@ def login_view(request):
         return Response({'error': 'Please enter a valid email address.'}, status=status.HTTP_400_BAD_REQUEST)
 
     role = detect_role(email)
+
+    # HR users must be registered in the HRUser table by a CHR admin
+    if role == 'HR':
+        if not HRUser.objects.filter(email=email).exists():
+            return Response(
+                {'error': 'HR user not registered. Please contact CHR.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
     # Get or create the Django user keyed by email (use email as username)
     user, created = User.objects.get_or_create(
@@ -155,6 +165,48 @@ def register_view(request):
 
     return Response(_build_auth_response(user, role), status=status.HTTP_201_CREATED)
 
+
+# ---------------------------------------------------------------------------
+# HR User Management – CHR only
+# ---------------------------------------------------------------------------
+
+@api_view(['GET', 'POST'])
+@permission_classes([IsCHR])
+def hr_users_list_create(request):
+    """
+    GET  /api/accounts/hr-users/  → list all HR users
+    POST /api/accounts/hr-users/  → add a new HR user
+    """
+    if request.method == 'GET':
+        hr_users = HRUser.objects.all()
+        serializer = HRUserSerializer(hr_users, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    # POST
+    serializer = HRUserSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsCHR])
+def hr_user_delete(request, pk):
+    """
+    DELETE /api/accounts/hr-users/<pk>/  → delete an HR user by id
+    """
+    try:
+        hr_user = HRUser.objects.get(pk=pk)
+    except HRUser.DoesNotExist:
+        return Response({'error': 'HR user not found.'}, status=status.HTTP_404_NOT_FOUND)
+    hr_user.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Organisation ViewSet
+# ---------------------------------------------------------------------------
 
 class OrganizationViewSet(viewsets.ModelViewSet):
     queryset = Organization.objects.all()
