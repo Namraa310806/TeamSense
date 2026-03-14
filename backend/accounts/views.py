@@ -7,6 +7,8 @@ from .models import Organization, Profile
 from .serializers import OrganizationSerializer, ProfileSerializer
 from .permissions import IsAdmin, IsExecutive, IsHR
 from django.contrib.auth.models import User
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
 
 
 # Admin email whitelist
@@ -20,10 +22,7 @@ ADMIN_EMAILS = {
 
 
 def detect_role(email: str):
-    """
-    Returns the role string for the given email, or None if not authorised.
-    Priority: ADMIN check first, then domain check.
-    """
+    """Return role for login. In hackathon mode, any valid email is accepted."""
     email_lower = email.strip().lower()
     if email_lower in ADMIN_EMAILS:
         return 'ADMIN'
@@ -31,7 +30,8 @@ def detect_role(email: str):
         return 'HR'
     if email_lower.endswith('@chr.ac.in'):
         return 'CHR'
-    return None
+    # Hackathon mode: allow any valid email and grant dashboard access.
+    return 'ADMIN'
 
 
 @api_view(['POST'])
@@ -51,12 +51,12 @@ def login_view(request):
     if not name:
         return Response({'error': 'Name is required.'}, status=status.HTTP_400_BAD_REQUEST)
 
+    try:
+        validate_email(email)
+    except ValidationError:
+        return Response({'error': 'Please enter a valid email address.'}, status=status.HTTP_400_BAD_REQUEST)
+
     role = detect_role(email)
-    if role is None:
-        return Response(
-            {'error': 'Access denied. Your email is not authorised to use this system.'},
-            status=status.HTTP_403_FORBIDDEN,
-        )
 
     # Get or create the Django user keyed by email (use email as username)
     user, created = User.objects.get_or_create(
@@ -84,6 +84,7 @@ def login_view(request):
         'email': email,
         'role': role,
         'token': token,
+        'goal': 'Access dashboard and employee meeting intelligence insights.',
     }, status=status.HTTP_200_OK)
 
 

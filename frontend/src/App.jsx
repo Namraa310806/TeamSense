@@ -6,6 +6,7 @@ import EmployeeProfile from './pages/EmployeeProfile';
 import MeetingInsights from './pages/MeetingInsights';
 import AIAssistant from './pages/AIAssistant';
 import Login from './pages/Login';
+import MeetingAnalysis from './pages/MeetingAnalysis';
 
 /** Returns true when the user has a valid session stored in localStorage. */
 function isAuthenticated() {
@@ -83,6 +84,14 @@ function App() {
           element={
             <ProtectedRoute>
               <AppLayout><AIAssistant /></AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/meeting-analysis"
+          element={
+            <ProtectedRoute>
+              <AppLayout><MeetingAnalysis /></AppLayout>
             </ProtectedRoute>
           }
         />

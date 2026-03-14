@@ -1,9 +1,10 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Brain, LogOut } from 'lucide-react';
+import { LayoutDashboard, Users, Brain, LogOut, AudioLines } from 'lucide-react';
 
 const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/employees', icon: Users, label: 'Employees' },
+  { to: '/meeting-analysis', icon: AudioLines, label: 'Meeting Intelligence' },
   { to: '/ai-assistant', icon: Brain, label: 'AI Assistant' },
 ];
 

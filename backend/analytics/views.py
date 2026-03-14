@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Avg, Count
 from employees.models import Employee
-from meetings.models import Meeting
+from meetings.models import EmployeeMeetingInsight, Meeting
 from .models import EmployeeInsight, MeetingEmbedding
 from .serializers import EmployeeInsightSerializer, MeetingEmbeddingSerializer
 from rest_framework.views import APIView
@@ -70,12 +70,60 @@ def dashboard(request):
         for m in recent_meetings
     ]
 
+    scoped_meetings = Meeting.objects.all() if hasattr(request.user, 'profile') and request.user.profile.role == 'ADMIN' else Meeting.objects.filter(organization=user_org)
+    scoped_employee_insights = EmployeeMeetingInsight.objects.filter(meeting__in=scoped_meetings)
+
+    team_sentiment_trend = [
+        {
+            'meeting_id': meeting.id,
+            'date': (meeting.meeting_date or meeting.date).isoformat(),
+            'sentiment_score': round(float(meeting.sentiment_score or 0.0), 4),
+        }
+        for meeting in scoped_meetings.order_by('-meeting_date', '-id')[:10]
+    ]
+
+    top_contributors = [
+        {
+            'employee_id': row['employee'],
+            'employee_name': row['employee__name'],
+            'avg_engagement': round(float(row['avg_engagement'] or 0.0), 4),
+            'avg_turns': round(float(row['avg_turns'] or 0.0), 2),
+        }
+        for row in (
+            scoped_employee_insights
+            .values('employee', 'employee__name')
+            .annotate(avg_engagement=Avg('engagement_score'), avg_turns=Avg('speaking_turns'))
+            .order_by('-avg_engagement', '-avg_turns')[:5]
+        )
+    ]
+
+    low_participation = [
+        {
+            'employee_id': row['employee'],
+            'employee_name': row['employee__name'],
+            'avg_engagement': round(float(row['avg_engagement'] or 0.0), 4),
+            'avg_turns': round(float(row['avg_turns'] or 0.0), 2),
+        }
+        for row in (
+            scoped_employee_insights
+            .values('employee', 'employee__name')
+            .annotate(avg_engagement=Avg('engagement_score'), avg_turns=Avg('speaking_turns'))
+            .order_by('avg_engagement', 'avg_turns')[:5]
+        )
+    ]
+
     return Response({
         'employee_count': employee_count,
         'meeting_count': meeting_count,
         'department_sentiment': department_sentiment,
         'high_attrition_employees': high_attrition_employees,
         'recent_meetings': recent,
+        'meeting_intelligence': {
+            'team_sentiment_trend': team_sentiment_trend,
+            'employee_engagement_chart': top_contributors,
+            'top_contributors': top_contributors,
+            'low_participation_employees': low_participation,
+        },
     })
 
 

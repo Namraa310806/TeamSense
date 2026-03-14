@@ -41,3 +41,13 @@ def update_insights_task(employee_id):
     logger.info(f"Updating insights for employee {employee_id}")
     from ai_engine.topics import update_employee_insights
     update_employee_insights(employee_id)
+
+
+@shared_task(name='meetings.process_uploaded_meeting')
+def process_uploaded_meeting_task(meeting_id):
+    """Run the meeting intelligence workflow for uploaded audio/video files."""
+    logger.info(f"Processing uploaded meeting file for meeting {meeting_id}")
+    from meetings.analysis_pipeline import run_meeting_intelligence_pipeline
+
+    run_meeting_intelligence_pipeline(meeting_id)
+    logger.info(f"Meeting intelligence completed for meeting {meeting_id}")
