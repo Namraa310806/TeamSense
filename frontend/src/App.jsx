@@ -29,9 +29,9 @@ function ProtectedRoute({ children }) {
 /** Layout wrapper that renders the sidebar + main content area. */
 function AppLayout({ children }) {
   return (
-    <div className="flex min-h-screen bg-surface-900">
+    <div className="flex min-h-screen bg-green-50">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8 overflow-auto">
+      <main className="flex-1 ml-64 p-8 overflow-auto bg-green-50">
         {children}
       </main>
     </div>

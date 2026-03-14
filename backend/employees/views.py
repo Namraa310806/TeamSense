@@ -1,32 +1,34 @@
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from .models import Employee
 from .serializers import EmployeeSerializer, EmployeeListSerializer
 from meetings.models import Meeting
 from meetings.serializers import MeetingSerializer
 from analytics.models import EmployeeInsight
 from analytics.serializers import EmployeeInsightSerializer
-from accounts.permissions import IsAdmin, IsExecutive, IsHR, IsSameOrganization
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = Employee.objects.prefetch_related('meetings').all()
 
     def get_permissions(self):
-        if self.action in ['list', 'retrieve']:
-            return [IsAdmin() or IsExecutive() or IsHR()]
-        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [IsExecutive() or IsHR()]
-        return super().get_permissions()
+        # All authenticated users can access employee data
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         user = self.request.user
+        if not user.is_authenticated:
+            return Employee.objects.none()
+        # ADMIN sees all employees
         if hasattr(user, 'profile') and user.profile.role == 'ADMIN':
             return Employee.objects.all()
-        elif hasattr(user, 'profile') and user.profile.organization:
+        # Users with an org see their org's employees
+        if hasattr(user, 'profile') and user.profile.organization:
             return Employee.objects.filter(organization=user.profile.organization)
-        return Employee.objects.none()
+        # HR/CHR/EXECUTIVE with no org assigned see all employees
+        return Employee.objects.all()
 
     def get_serializer_class(self):
         if self.action == 'list':
