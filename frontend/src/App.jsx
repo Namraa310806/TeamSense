@@ -5,6 +5,7 @@ import EmployeeList from './pages/EmployeeList';
 import EmployeeProfile from './pages/EmployeeProfile';
 import MeetingInsights from './pages/MeetingInsights';
 import AIAssistant from './pages/AIAssistant';
+import IngestionDashboard from './pages/IngestionDashboard';
 import Login from './pages/Login';
 
 /** Returns true when the user has a valid session stored in localStorage. */
@@ -86,9 +87,18 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route
+          path="/ingestion"
+          element={
+            <ProtectedRoute>
+              <AppLayout><IngestionDashboard /></AppLayout>
+            </ProtectedRoute>
+          }
+        />
 
         {/* Catch-all: redirect to dashboard (ProtectedRoute handles auth check) */}
         <Route path="*" element={<Navigate to="/" replace />} />
+
       </Routes>
     </Router>
   );

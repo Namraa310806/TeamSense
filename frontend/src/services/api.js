@@ -25,6 +25,16 @@ export const fetchMeetings = (employeeId) => {
 export const fetchMeeting = (id) => api.get(`/meetings/${id}/`);
 export const uploadMeeting = (data) => api.post('/meetings/upload/', data);
 
+export const uploadCsvFeedback = (file) => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return api.post('/ingestion/upload-csv/', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+
+export const fetchFeedback = () => api.get('/ingestion/feedback/');
+
 // Insights
 export const fetchInsights = (employeeId) => api.get(`/employee-insights/${employeeId}/`);
 
