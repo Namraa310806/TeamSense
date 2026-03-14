@@ -7,6 +7,7 @@ from meetings.models import Meeting
 class EmployeeInsight(models.Model):
     employee = models.OneToOneField(Employee, on_delete=models.CASCADE, related_name='insight')
     topics = models.JSONField(default=list, blank=True)
+    profile_metrics = models.JSONField(default=dict, blank=True)
     career_goals = models.TextField(blank=True, default='')
     concerns = models.TextField(blank=True, default='')
     burnout_risk = models.FloatField(default=0.0)

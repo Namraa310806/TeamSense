@@ -7,17 +7,20 @@ from datetime import datetime
 
 import pandas as pd
 from celery import shared_task
+from django.contrib.auth import get_user_model
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.db import transaction
+from django.db.models import Avg, Count
 from django.utils import timezone
 
 from ai_engine.sentiment import analyze_sentiment, get_emotion_breakdown
 from ai_engine.summarizer import summarize_transcript
 from ai_services.emotion_service import EmotionService
+from analytics.models import EmployeeInsight
 from analytics.models import SentimentInsight
 from employees.models import Employee
-from meetings.models import Meeting, MeetingParticipant
+from meetings.models import EmployeeMeetingInsight, Meeting, MeetingParticipant
 
 from .models import Document, Feedback, IngestionJob
 
@@ -108,37 +111,97 @@ def _safe_text(value):
     return str(value).strip()
 
 
+def _extract_email(value):
+    text = _safe_text(value)
+    if not text:
+        return ''
+    # Supports plain emails and markdown mailto links.
+    mailto_match = re.search(r'mailto:([^\)\s]+)', text, flags=re.IGNORECASE)
+    if mailto_match:
+        return mailto_match.group(1).strip().lower()
+    email_match = re.search(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', text)
+    if email_match:
+        return email_match.group(0).strip().lower()
+    return ''
+
+
 def _placeholder_email(seed):
     cleaned = re.sub(r'[^a-zA-Z0-9]+', '', str(seed).lower()) or uuid.uuid4().hex[:8]
     return f"{cleaned}@placeholder.local"
 
 
-def _upsert_employee(payload):
+def _get_user_org(user_id):
+    if not user_id:
+        return None
+    User = get_user_model()
+    user = User.objects.filter(id=user_id).select_related('profile__organization').first()
+    if not user or not hasattr(user, 'profile'):
+        return None
+    return user.profile.organization
+
+
+def _refresh_employee_profile_metrics(employee):
+    feedback_qs = Feedback.objects.filter(employee=employee)
+    meeting_insight_qs = EmployeeMeetingInsight.objects.filter(employee=employee)
+    meeting_participation = MeetingParticipant.objects.filter(employee=employee).count()
+
+    metrics = {
+        'feedback_count': feedback_qs.count(),
+        'average_sentiment': float(feedback_qs.aggregate(avg=Avg('sentiment')).get('avg') or 0.0),
+        'meeting_participation': meeting_participation,
+        'meeting_engagement': float(meeting_insight_qs.aggregate(avg=Avg('engagement_score')).get('avg') or 0.0),
+    }
+
+    EmployeeInsight.objects.update_or_create(
+        employee=employee,
+        defaults={
+            'profile_metrics': metrics,
+        },
+    )
+
+
+def _upsert_employee(payload, organization=None, require_email=False):
     employee_id = payload.get('employee_id')
-    email = _safe_text(payload.get('email'))
+    email = _extract_email(payload.get('email'))
     name = _safe_text(payload.get('name')) or 'Unknown Employee'
     department = _safe_text(payload.get('department')) or 'General'
     manager = _safe_text(payload.get('manager'))
     role = _safe_text(payload.get('role')) or 'Employee'
     join_date = _to_date(payload.get('join_date'))
 
+    if require_email and not email:
+        raise ValueError('Missing employee email in payload.')
+
     employee = None
     if employee_id:
         try:
-            employee = Employee.objects.filter(id=int(employee_id)).first()
+            scoped = Employee.objects.filter(id=int(employee_id))
+            if organization is not None:
+                scoped = scoped.filter(organization=organization)
+            employee = scoped.first()
         except (TypeError, ValueError):
             employee = None
 
     if employee is None and email:
-        employee = Employee.objects.filter(email=email).first()
+        scoped = Employee.objects.filter(email=email)
+        if organization is not None:
+            scoped = scoped.filter(organization=organization)
+        employee = scoped.first()
 
+    created = False
     if employee is None:
         create_email = email or _placeholder_email(employee_id or name)
         suffix = 1
         base_email = create_email
-        while Employee.objects.filter(email=create_email).exists():
+        duplicate_qs = Employee.objects.filter(email=create_email)
+        if organization is not None:
+            duplicate_qs = duplicate_qs.filter(organization=organization)
+        while duplicate_qs.exists():
             create_email = f"{base_email.split('@')[0]}{suffix}@{base_email.split('@')[1]}"
             suffix += 1
+            duplicate_qs = Employee.objects.filter(email=create_email)
+            if organization is not None:
+                duplicate_qs = duplicate_qs.filter(organization=organization)
 
         employee = Employee.objects.create(
             name=name,
@@ -147,7 +210,9 @@ def _upsert_employee(payload):
             manager=manager,
             join_date=join_date,
             email=create_email,
+            organization=organization,
         )
+        created = True
     else:
         updates = []
         if name and employee.name != name:
@@ -165,10 +230,13 @@ def _upsert_employee(payload):
         if email and employee.email != email and not Employee.objects.filter(email=email).exclude(id=employee.id).exists():
             employee.email = email
             updates.append('email')
+        if organization is not None and employee.organization_id != organization.id:
+            employee.organization = organization
+            updates.append('organization')
         if updates:
             employee.save(update_fields=updates + ['updated_at'])
 
-    return employee
+    return employee, created
 
 
 def _create_sentiment_insight(employee, source_type, score, text):
@@ -189,12 +257,15 @@ def _create_sentiment_insight(employee, source_type, score, text):
 @shared_task(bind=True)
 def parse_csv_task(self, storage_path, user_id=None, job_id=None):
     records = 0
+    employees_added = 0
     try:
         if job_id:
             IngestionJob.objects.filter(id=job_id).update(
                 status=IngestionJob.STATUS_PROCESSING,
                 started_at=timezone.now(),
             )
+
+        organization = _get_user_org(user_id)
 
         with default_storage.open(storage_path, 'rb') as handle:
             file_bytes = handle.read()
@@ -205,19 +276,27 @@ def parse_csv_task(self, storage_path, user_id=None, job_id=None):
         else:
             df = pd.read_csv(io.BytesIO(file_bytes))
 
+        normalized_columns = {str(col).strip().lower(): col for col in df.columns}
+        required = ['employee_email', 'employee_name', 'department', 'manager', 'join_date']
+        missing = [field for field in required if field not in normalized_columns]
+        if missing:
+            raise ValueError('Invalid CSV format. Missing required columns: ' + ', '.join(missing))
+
         with transaction.atomic():
             for _, row in df.iterrows():
                 row_data = {k: (None if pd.isna(v) else v) for k, v in row.to_dict().items()}
                 payload = {
                     'employee_id': row_data.get('employee_id') or row_data.get('id'),
-                    'name': row_data.get('name') or row_data.get('employee_name'),
-                    'email': row_data.get('email'),
-                    'department': row_data.get('department'),
-                    'manager': row_data.get('manager'),
+                    'name': row_data.get('employee_name') or row_data.get('name'),
+                    'email': row_data.get('employee_email') or row_data.get('email'),
+                    'department': row_data.get('department') or 'General',
+                    'manager': row_data.get('manager') or '',
                     'role': row_data.get('role'),
                     'join_date': row_data.get('join_date') or row_data.get('date_of_joining'),
                 }
-                employee = _upsert_employee(payload)
+                employee, created = _upsert_employee(payload, organization=organization, require_email=True)
+                if created:
+                    employees_added += 1
 
                 content = _safe_text(
                     row_data.get('feedback')
@@ -225,21 +304,21 @@ def parse_csv_task(self, storage_path, user_id=None, job_id=None):
                     or row_data.get('message')
                     or row_data.get('notes')
                 )
-                if not content:
-                    content = f"Employee profile ingested from CSV/Excel for {employee.name}."
+                if content:
+                    sentiment = analyze_sentiment(content)
+                    timestamp = _to_datetime(row_data.get('timestamp'))
 
-                sentiment = analyze_sentiment(content)
-                timestamp = _to_datetime(row_data.get('timestamp'))
+                    Feedback.objects.create(
+                        employee=employee,
+                        source=Feedback.SOURCE_CSV,
+                        content=content,
+                        sentiment=sentiment,
+                        timestamp=timestamp,
+                        raw_data=row_data,
+                    )
+                    _create_sentiment_insight(employee, 'feedback', sentiment, content)
 
-                Feedback.objects.create(
-                    employee=employee,
-                    source=Feedback.SOURCE_CSV,
-                    content=content,
-                    sentiment=sentiment,
-                    timestamp=timestamp,
-                    raw_data=row_data,
-                )
-                _create_sentiment_insight(employee, 'feedback', sentiment, content)
+                _refresh_employee_profile_metrics(employee)
                 records += 1
 
         default_storage.delete(storage_path)
@@ -248,6 +327,7 @@ def parse_csv_task(self, storage_path, user_id=None, job_id=None):
                 status=IngestionJob.STATUS_COMPLETED,
                 records_processed=records,
                 completed_at=timezone.now(),
+                metadata={'employees_added': employees_added},
             )
     except Exception as exc:
         logger.exception('CSV/Excel ingestion failed: %s', exc)
@@ -270,6 +350,7 @@ def ingest_slack_messages_task(self, messages, channel='hr-feedback', user_id=No
                 started_at=timezone.now(),
             )
 
+        organization = _get_user_org(user_id)
         source_messages = messages or _maybe_fetch_slack_messages(channel)
         for message in source_messages:
             text = _safe_text(message.get('text'))
@@ -284,7 +365,7 @@ def ingest_slack_messages_task(self, messages, channel='hr-feedback', user_id=No
                 'manager': message.get('manager'),
                 'join_date': message.get('join_date'),
             }
-            employee = _upsert_employee(payload)
+            employee, _ = _upsert_employee(payload, organization=organization, require_email=True)
             sentiment = analyze_sentiment(text)
 
             Feedback.objects.create(
@@ -296,6 +377,7 @@ def ingest_slack_messages_task(self, messages, channel='hr-feedback', user_id=No
                 raw_data={'channel': channel, **message},
             )
             _create_sentiment_insight(employee, 'feedback', sentiment, text)
+            _refresh_employee_profile_metrics(employee)
             records += 1
 
         if job_id:
@@ -325,6 +407,7 @@ def ingest_google_forms_task(self, responses, form_id='', user_id=None, job_id=N
                 started_at=timezone.now(),
             )
 
+        organization = _get_user_org(user_id)
         source_responses = responses or _maybe_fetch_google_forms(form_id)
         for response in source_responses:
             feedback_text = _safe_text(response.get('feedback') or response.get('response') or response.get('comment'))
@@ -336,7 +419,7 @@ def ingest_google_forms_task(self, responses, form_id='', user_id=None, job_id=N
                 'manager': response.get('manager'),
                 'join_date': response.get('join_date'),
             }
-            employee = _upsert_employee(payload)
+            employee, _ = _upsert_employee(payload, organization=organization, require_email=True)
 
             sentiment = analyze_sentiment(feedback_text or f"Google Forms response for {employee.name}")
             Feedback.objects.create(
@@ -348,6 +431,7 @@ def ingest_google_forms_task(self, responses, form_id='', user_id=None, job_id=N
                 raw_data={'form_id': form_id, **response},
             )
             _create_sentiment_insight(employee, 'feedback', sentiment, feedback_text or '')
+            _refresh_employee_profile_metrics(employee)
             records += 1
 
         if job_id:
@@ -386,6 +470,15 @@ def _extract_text_from_document(storage_path):
         except Exception:
             return file_bytes.decode('utf-8', errors='ignore')
 
+    if ext == '.docx':
+        try:
+            from docx import Document as DocxDocument
+
+            doc = DocxDocument(io.BytesIO(file_bytes))
+            return '\n'.join(p.text for p in doc.paragraphs if p.text).strip()
+        except Exception:
+            return file_bytes.decode('utf-8', errors='ignore')
+
     return file_bytes.decode('utf-8', errors='ignore')
 
 
@@ -403,9 +496,14 @@ def ingest_document_task(self, storage_path, file_name, participants=None, emplo
         summary = summarize_transcript(content[:6000]) if content else 'No extractable text found.'
         sentiment = analyze_sentiment(content or summary)
 
+        organization = _get_user_org(user_id)
+
         linked_employee = None
         if employee_id:
-            linked_employee = Employee.objects.filter(id=employee_id).first()
+            scoped = Employee.objects.filter(id=employee_id)
+            if organization is not None:
+                scoped = scoped.filter(organization=organization)
+            linked_employee = scoped.first()
 
         document = Document.objects.create(
             employee=linked_employee,
@@ -419,7 +517,10 @@ def ingest_document_task(self, storage_path, file_name, participants=None, emplo
         participant_employees = []
         for participant in participants or []:
             participant_employees.append(
-                _upsert_employee({'name': participant, 'department': 'General', 'join_date': timezone.now().date()})
+                _upsert_employee(
+                    {'name': participant, 'department': 'General', 'join_date': timezone.now().date()},
+                    organization=organization,
+                )[0]
             )
 
         if linked_employee and linked_employee not in participant_employees:
@@ -427,10 +528,14 @@ def ingest_document_task(self, storage_path, file_name, participants=None, emplo
 
         primary_employee = participant_employees[0] if participant_employees else linked_employee
         if primary_employee is None:
-            primary_employee = _upsert_employee({'name': 'Document Participant', 'department': 'General', 'join_date': timezone.now().date()})
+            primary_employee = _upsert_employee(
+                {'name': 'Document Participant', 'department': 'General', 'join_date': timezone.now().date()},
+                organization=organization,
+            )[0]
 
         if primary_employee:
             meeting = Meeting.objects.create(
+                organization=organization,
                 employee=primary_employee,
                 date=timezone.now().date(),
                 transcript=content[:12000],
@@ -443,6 +548,7 @@ def ingest_document_task(self, storage_path, file_name, participants=None, emplo
             for participant_employee in participant_employees:
                 MeetingParticipant.objects.get_or_create(meeting=meeting, employee=participant_employee)
                 _create_sentiment_insight(participant_employee, 'doc', sentiment, summary)
+                _refresh_employee_profile_metrics(participant_employee)
             records += 1
 
         default_storage.delete(storage_path)

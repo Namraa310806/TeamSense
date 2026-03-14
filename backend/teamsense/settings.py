@@ -1,4 +1,5 @@
 import os
+import logging
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -121,7 +122,26 @@ CELERY_TASK_ALWAYS_EAGER = os.getenv('CELERY_TASK_ALWAYS_EAGER', 'False').lower(
 CELERY_TASK_EAGER_PROPAGATES = True
 
 # OpenAI
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '').strip()
+OPENAI_KEY_STRICT = os.getenv('OPENAI_KEY_STRICT', 'False').lower() in ('true', '1', 'yes')
+
+
+def _mask_secret(value: str) -> str:
+    if not value:
+        return 'missing'
+    if len(value) <= 10:
+        return '***masked***'
+    return f"{value[:7]}...{value[-4:]}"
+
+
+_settings_logger = logging.getLogger(__name__)
+if not OPENAI_API_KEY:
+    msg = 'OPENAI_API_KEY not found in environment variables.'
+    if OPENAI_KEY_STRICT:
+        raise RuntimeError(msg)
+    _settings_logger.warning('%s OpenAI-backed features will use fallback behavior.', msg)
+else:
+    _settings_logger.info('OpenAI API key loaded (masked=%s)', _mask_secret(OPENAI_API_KEY))
 
 # Embedding dimensions
 EMBEDDING_DIMENSIONS = 1536
@@ -155,6 +175,11 @@ LOGGING = {
             'propagate': False,
         },
         'ai_engine': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'ai_services': {
             'handlers': ['console'],
             'level': 'INFO',
             'propagate': False,
