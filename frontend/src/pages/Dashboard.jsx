@@ -252,6 +252,42 @@ function Dashboard() {
           </table>
         </div>
       </div>
+
+      {/* Meeting Intelligence */}
+      <div className="glass-card p-6 animate-fade-in">
+        <h2 className="text-lg font-semibold text-white mb-4">Meeting Intelligence</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Top Contributors</p>
+            <div className="space-y-2">
+              {(data?.meeting_intelligence?.top_contributors || []).slice(0, 5).map((item) => (
+                <div key={item.employee_id} className="flex items-center justify-between bg-surface-900/60 border border-surface-700 rounded-lg px-3 py-2">
+                  <span className="text-sm text-white">{item.employee_name}</span>
+                  <span className="text-xs text-accent-emerald">{Math.round((item.avg_engagement || 0) * 100)}% engagement</span>
+                </div>
+              ))}
+              {(!data?.meeting_intelligence?.top_contributors || data.meeting_intelligence.top_contributors.length === 0) && (
+                <p className="text-slate-500 text-sm">No contributor data yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Low Participation Employees</p>
+            <div className="space-y-2">
+              {(data?.meeting_intelligence?.low_participation_employees || []).slice(0, 5).map((item) => (
+                <div key={item.employee_id} className="flex items-center justify-between bg-surface-900/60 border border-surface-700 rounded-lg px-3 py-2">
+                  <span className="text-sm text-white">{item.employee_name}</span>
+                  <span className="text-xs text-accent-amber">{Math.round((item.avg_engagement || 0) * 100)}% engagement</span>
+                </div>
+              ))}
+              {(!data?.meeting_intelligence?.low_participation_employees || data.meeting_intelligence.low_participation_employees.length === 0) && (
+                <p className="text-slate-500 text-sm">No low-participation data yet.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
