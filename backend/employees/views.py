@@ -7,10 +7,26 @@ from meetings.models import Meeting
 from meetings.serializers import MeetingSerializer
 from analytics.models import EmployeeInsight
 from analytics.serializers import EmployeeInsightSerializer
+from accounts.permissions import IsAdmin, IsExecutive, IsHR, IsSameOrganization
 
 
 class EmployeeViewSet(viewsets.ModelViewSet):
     queryset = Employee.objects.prefetch_related('meetings').all()
+
+    def get_permissions(self):
+        if self.action in ['list', 'retrieve']:
+            return [IsAdmin() or IsExecutive() or IsHR()]
+        elif self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsExecutive() or IsHR()]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        user = self.request.user
+        if hasattr(user, 'profile') and user.profile.role == 'ADMIN':
+            return Employee.objects.all()
+        elif hasattr(user, 'profile') and user.profile.organization:
+            return Employee.objects.filter(organization=user.profile.organization)
+        return Employee.objects.none()
 
     def get_serializer_class(self):
         if self.action == 'list':
