@@ -11,6 +11,7 @@ from django.utils import timezone
 from ai_engine.model_loader import ModelManager
 
 from analytics.models import MeetingAnalysis
+from ai_services.emotion_service import EmotionService
 from ai_services.sentiment_service import SentimentService
 from ai_services.summarization_service import SummarizationService
 from meetings.models import (
@@ -28,6 +29,7 @@ _ALLOWED_EXTENSIONS = {'.mp3', '.wav', '.mp4', '.m4a'}
 _ASR_PIPELINE = None
 _SENTIMENT_SERVICE = None
 _SUMMARY_SERVICE = None
+_EMOTION_SERVICE = None
 
 
 def _get_asr_pipeline():
@@ -49,6 +51,13 @@ def _get_summary_service():
     if _SUMMARY_SERVICE is None:
         _SUMMARY_SERVICE = SummarizationService()
     return _SUMMARY_SERVICE
+
+
+def _get_emotion_service():
+    global _EMOTION_SERVICE
+    if _EMOTION_SERVICE is None:
+        _EMOTION_SERVICE = EmotionService()
+    return _EMOTION_SERVICE
 
 
 def validate_media_extension(filename: str):
@@ -483,6 +492,13 @@ def _sentiment_by_speaker(speaker_turns, transcript):
     }
 
 
+def _emotion_distribution(speaker_turns, transcript):
+    emotion_service = _get_emotion_service()
+    if speaker_turns:
+        return emotion_service.aggregate([item.get('text', '') for item in speaker_turns])
+    return emotion_service.analyze(transcript)
+
+
 def analyze_and_store_meeting(employees, transcript: str, date=None, speaker_turns=None):
     if not employees:
         raise ValueError('At least one employee is required for meeting analysis')
@@ -591,6 +607,55 @@ def _upsert_employee_insights(meeting, speaker_turns, sentiment_bundle, particip
             },
         )
 
+        participant.speaking_turns = int(bucket['speaking_turns'])
+        participant.sentiment_score = round(sentiment_score, 4)
+        participant.engagement_score = round(engagement_score, 4)
+        participant.save(update_fields=['speaking_turns', 'sentiment_score', 'engagement_score'])
+
+
+def _process_text_analysis_for_meeting(meeting, full_text, speaker_turns):
+    summary_service = _get_summary_service()
+    summary = summary_service.summarize(full_text)
+
+    sentiment_bundle = _sentiment_by_speaker(speaker_turns, full_text)
+    participation = _compute_participation(speaker_turns)
+    signals = _detect_signals(full_text)
+    emotions = _emotion_distribution(speaker_turns, full_text)
+
+    overall_scores = sentiment_bundle.get('overall', {}).get('scores', {})
+    meeting.summary = summary
+    meeting.sentiment_score = float(overall_scores.get('positive', 0.0))
+    meeting.transcript_status = Meeting.TRANSCRIPT_STATUS_COMPLETED
+    meeting.save(update_fields=['transcript', 'summary', 'sentiment_score', 'transcript_status', 'date', 'meeting_date', 'updated_at'])
+
+    enriched_engagement = {
+        **signals['engagement_signals'],
+        'emotion_distribution': emotions,
+    }
+
+    MeetingAnalysis.objects.update_or_create(
+        meeting=meeting,
+        defaults={
+            'transcript': meeting.transcript,
+            'summary': summary,
+            'employee_sentiment_scores': sentiment_bundle,
+            'participation_score': participation['score'],
+            'collaboration_signals': signals['collaboration_signals'],
+            'engagement_signals': enriched_engagement,
+            'conflict_detection': signals['conflict_detection'],
+            'speaker_mapping': {
+                'turns': speaker_turns,
+                'word_counts': participation['per_speaker'],
+                'durations': participation['per_speaker_duration'],
+                'speaking_turns': participation['speaking_turns'],
+                'interruption_signals': participation['interruption_signals'],
+            },
+        },
+    )
+
+    _upsert_meeting_insights(meeting, summary, meeting.transcript, signals)
+    _upsert_employee_insights(meeting, speaker_turns, sentiment_bundle, participation)
+
 
 def run_meeting_intelligence_pipeline(meeting_id: int):
     meeting = Meeting.objects.select_related('employee').get(id=meeting_id)
@@ -669,44 +734,73 @@ def run_meeting_intelligence_pipeline(meeting_id: int):
         for turn in speaker_turns:
             turn['employee_id'] = speaker_to_employee.get(turn['speaker'])
 
-        summary_service = _get_summary_service()
-        summary = summary_service.summarize(full_text)
-
-        sentiment_bundle = _sentiment_by_speaker(speaker_turns, full_text)
-        participation = _compute_participation(speaker_turns)
-        signals = _detect_signals(full_text)
-
-        overall_scores = sentiment_bundle.get('overall', {}).get('scores', {})
-        meeting.summary = summary
-        meeting.sentiment_score = float(overall_scores.get('positive', 0.0))
-        meeting.transcript_status = Meeting.TRANSCRIPT_STATUS_COMPLETED
-        meeting.save(update_fields=['transcript', 'summary', 'sentiment_score', 'transcript_status', 'date', 'meeting_date', 'updated_at'])
-
-        MeetingAnalysis.objects.update_or_create(
-            meeting=meeting,
-            defaults={
-                'transcript': meeting.transcript,
-                'summary': summary,
-                'employee_sentiment_scores': sentiment_bundle,
-                'participation_score': participation['score'],
-                'collaboration_signals': signals['collaboration_signals'],
-                'engagement_signals': signals['engagement_signals'],
-                'conflict_detection': signals['conflict_detection'],
-                'speaker_mapping': {
-                    'turns': speaker_turns,
-                    'word_counts': participation['per_speaker'],
-                    'durations': participation['per_speaker_duration'],
-                    'speaking_turns': participation['speaking_turns'],
-                    'interruption_signals': participation['interruption_signals'],
-                },
-            },
-        )
-
-        _upsert_meeting_insights(meeting, summary, meeting.transcript, signals)
-        _upsert_employee_insights(meeting, speaker_turns, sentiment_bundle, participation)
+        _process_text_analysis_for_meeting(meeting, full_text, speaker_turns)
         return meeting
     except Exception as exc:
         logger.exception('Meeting intelligence failed for meeting_id=%s: %s', meeting_id, exc)
+        meeting.transcript_status = Meeting.TRANSCRIPT_STATUS_FAILED
+        meeting.save(update_fields=['transcript_status', 'updated_at'])
+        return meeting
+
+
+def run_text_meeting_intelligence_pipeline(meeting_id: int):
+    """Run meeting intelligence pipeline when transcript text is already provided."""
+    meeting = Meeting.objects.select_related('employee').get(id=meeting_id)
+    meeting.transcript_status = Meeting.TRANSCRIPT_STATUS_PROCESSING
+    meeting.save(update_fields=['transcript_status', 'updated_at'])
+
+    try:
+        full_text = (meeting.transcript or '').strip()
+        if not full_text:
+            raise ValueError('Transcript text is empty. Provide transcript_text or upload recording.')
+
+        participants = list(meeting.participants.select_related('employee'))
+        employees = [p.employee for p in participants]
+        if not employees and meeting.employee_id:
+            employees = [meeting.employee]
+
+        generated_turns = _build_name_based_turns(full_text, employees)
+        if not generated_turns:
+            generated_turns = [{'speaker': 'Speaker_1', 'text': full_text, 'start': 0.0, 'end': 0.0}]
+
+        label_to_employee_id = {}
+        for idx, label in enumerate(sorted({turn['speaker'] for turn in generated_turns})):
+            linked_employee = participants[idx].employee if idx < len(participants) else (employees[idx] if idx < len(employees) else None)
+            MeetingSpeakerMapping.objects.update_or_create(
+                meeting=meeting,
+                speaker_label=label,
+                defaults={'employee': linked_employee},
+            )
+            if linked_employee:
+                label_to_employee_id[label] = linked_employee.id
+
+        MeetingTranscript.objects.filter(meeting=meeting).delete()
+        MeetingTranscript.objects.bulk_create(
+            [
+                MeetingTranscript(
+                    meeting=meeting,
+                    speaker=turn['speaker'],
+                    speaker_employee_id=label_to_employee_id.get(turn['speaker']),
+                    text=turn['text'],
+                    start_time=float(turn.get('start', 0.0) or 0.0),
+                    end_time=float(turn.get('end', 0.0) or 0.0),
+                )
+                for turn in generated_turns
+            ]
+        )
+
+        meeting.transcript = '\n'.join(
+            f"[{_to_hh_mm_ss(float(turn.get('start', 0.0) or 0.0))}] {turn['speaker']}: {turn['text']}"
+            for turn in generated_turns
+        )
+
+        for turn in generated_turns:
+            turn['employee_id'] = label_to_employee_id.get(turn['speaker'])
+
+        _process_text_analysis_for_meeting(meeting, full_text, generated_turns)
+        return meeting
+    except Exception as exc:
+        logger.exception('Transcript intelligence failed for meeting_id=%s: %s', meeting_id, exc)
         meeting.transcript_status = Meeting.TRANSCRIPT_STATUS_FAILED
         meeting.save(update_fields=['transcript_status', 'updated_at'])
         return meeting

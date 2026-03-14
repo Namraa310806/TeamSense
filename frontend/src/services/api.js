@@ -32,6 +32,7 @@ function clearSessionAndRedirect() {
   try {
     localStorage.removeItem('user');
     localStorage.removeItem('access_token');
+    localStorage.removeItem('demo_mode');
   } catch {
     // noop
   }
@@ -40,7 +41,18 @@ function clearSessionAndRedirect() {
   }
 }
 
+function isDemoMode() {
+  try {
+    return localStorage.getItem('demo_mode') === 'true';
+  } catch {
+    return false;
+  }
+}
+
 api.interceptors.request.use((config) => {
+  if (isDemoMode()) {
+    return config;
+  }
   try {
     const token = localStorage.getItem('access_token');
     if (token && isLikelyJwt(token) && !isJwtExpired(token)) {
@@ -57,7 +69,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error?.response?.status === 401) {
+    if (error?.response?.status === 401 && !isDemoMode()) {
       clearSessionAndRedirect();
     }
     return Promise.reject(error);

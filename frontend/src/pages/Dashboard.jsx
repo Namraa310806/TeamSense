@@ -73,6 +73,26 @@ function Dashboard() {
             { id: 2, employee_name: 'James Wilson', date: '2026-03-09', sentiment_score: 0.32 },
             { id: 3, employee_name: 'Priya Sharma', date: '2026-03-08', sentiment_score: 0.89 },
           ],
+          meeting_intelligence: {
+            top_contributors: [
+              { employee_id: 1, employee_name: 'Sarah Chen', avg_engagement: 0.87 },
+              { employee_id: 3, employee_name: 'Priya Sharma', avg_engagement: 0.81 },
+              { employee_id: 5, employee_name: 'Rahul Singh', avg_engagement: 0.76 },
+              { employee_id: 7, employee_name: 'Neha Patel', avg_engagement: 0.72 },
+              { employee_id: 2, employee_name: 'James Wilson', avg_engagement: 0.66 },
+            ],
+            low_participation_employees: [
+              { employee_id: 8, employee_name: 'Tom Bradley', avg_engagement: 0.29 },
+              { employee_id: 4, employee_name: 'Ava Martin', avg_engagement: 0.33 },
+            ],
+            top_sentiment_people: [
+              { employee_id: 3, employee_name: 'Priya Sharma', avg_sentiment: 0.89, meeting_count: 3 },
+              { employee_id: 1, employee_name: 'Sarah Chen', avg_sentiment: 0.84, meeting_count: 4 },
+              { employee_id: 7, employee_name: 'Neha Patel', avg_sentiment: 0.79, meeting_count: 2 },
+              { employee_id: 5, employee_name: 'Rahul Singh', avg_sentiment: 0.74, meeting_count: 2 },
+              { employee_id: 6, employee_name: 'Ishita Rao', avg_sentiment: 0.71, meeting_count: 2 },
+            ],
+          },
         });
       })
       .finally(() => setLoading(false));
@@ -255,15 +275,15 @@ function Dashboard() {
 
       {/* Meeting Intelligence */}
       <div className="glass-card p-6 animate-fade-in">
-        <h2 className="text-lg font-semibold text-white mb-4">Meeting Intelligence</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <h2 className="text-lg font-semibold text-slate-800 mb-4">Meeting Intelligence</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Top Contributors</p>
             <div className="space-y-2">
               {(data?.meeting_intelligence?.top_contributors || []).slice(0, 5).map((item) => (
-                <div key={item.employee_id} className="flex items-center justify-between bg-surface-900/60 border border-surface-700 rounded-lg px-3 py-2">
-                  <span className="text-sm text-white">{item.employee_name}</span>
-                  <span className="text-xs text-accent-emerald">{Math.round((item.avg_engagement || 0) * 100)}% engagement</span>
+                <div key={item.employee_id} className="flex items-center justify-between bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                  <span className="text-sm text-slate-800">{item.employee_name}</span>
+                  <span className="text-xs text-emerald-700 font-medium">{Math.round((item.avg_engagement || 0) * 100)}% engagement</span>
                 </div>
               ))}
               {(!data?.meeting_intelligence?.top_contributors || data.meeting_intelligence.top_contributors.length === 0) && (
@@ -273,12 +293,29 @@ function Dashboard() {
           </div>
 
           <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Top 5 By Sentiment</p>
+            <div className="space-y-2">
+              {(data?.meeting_intelligence?.top_sentiment_people || []).slice(0, 5).map((item) => (
+                <div key={item.employee_id} className="flex items-center justify-between bg-cyan-50 border border-cyan-200 rounded-lg px-3 py-2">
+                  <span className="text-sm text-slate-800">{item.employee_name}</span>
+                  <span className="text-xs text-cyan-700 font-medium">
+                    {Math.round((item.avg_sentiment || 0) * 100)}% sentiment
+                  </span>
+                </div>
+              ))}
+              {(!data?.meeting_intelligence?.top_sentiment_people || data.meeting_intelligence.top_sentiment_people.length === 0) && (
+                <p className="text-slate-500 text-sm">No sentiment ranking data yet.</p>
+              )}
+            </div>
+          </div>
+
+          <div>
             <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Low Participation Employees</p>
             <div className="space-y-2">
               {(data?.meeting_intelligence?.low_participation_employees || []).slice(0, 5).map((item) => (
-                <div key={item.employee_id} className="flex items-center justify-between bg-surface-900/60 border border-surface-700 rounded-lg px-3 py-2">
-                  <span className="text-sm text-white">{item.employee_name}</span>
-                  <span className="text-xs text-accent-amber">{Math.round((item.avg_engagement || 0) * 100)}% engagement</span>
+                <div key={item.employee_id} className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <span className="text-sm text-slate-800">{item.employee_name}</span>
+                  <span className="text-xs text-amber-700 font-medium">{Math.round((item.avg_engagement || 0) * 100)}% engagement</span>
                 </div>
               ))}
               {(!data?.meeting_intelligence?.low_participation_employees || data.meeting_intelligence.low_participation_employees.length === 0) && (
