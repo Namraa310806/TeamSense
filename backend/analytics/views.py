@@ -1,4 +1,4 @@
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Avg, Count
@@ -6,21 +6,36 @@ from employees.models import Employee
 from meetings.models import Meeting
 from .models import EmployeeInsight
 from .serializers import EmployeeInsightSerializer
+from accounts.permissions import IsAdmin, IsExecutive, IsHR
 
 
 @api_view(['GET'])
+@permission_classes([IsAdmin, IsExecutive, IsHR])
 def dashboard(request):
     """Dashboard summary endpoint."""
-    employee_count = Employee.objects.count()
-    meeting_count = Meeting.objects.count()
+    user_org = request.user.profile.organization if hasattr(request.user, 'profile') else None
+    if hasattr(request.user, 'profile') and request.user.profile.role == 'ADMIN':
+        employee_count = Employee.objects.count()
+        meeting_count = Meeting.objects.count()
+        dept_sentiment = (
+            Meeting.objects
+            .values('employee__department')
+            .annotate(avg_sentiment=Avg('sentiment_score'), count=Count('id'))
+            .order_by('employee__department')
+        )
+    elif user_org:
+        employee_count = Employee.objects.filter(organization=user_org).count()
+        meeting_count = Meeting.objects.filter(employee__organization=user_org).count()
+        dept_sentiment = (
+            Meeting.objects
+            .filter(employee__organization=user_org)
+            .values('employee__department')
+            .annotate(avg_sentiment=Avg('sentiment_score'), count=Count('id'))
+            .order_by('employee__department')
+        )
+    else:
+        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
-    # Department sentiment averages
-    dept_sentiment = (
-        Meeting.objects
-        .values('employee__department')
-        .annotate(avg_sentiment=Avg('sentiment_score'), count=Count('id'))
-        .order_by('employee__department')
-    )
     department_sentiment = [
         {
             'department': d['employee__department'],
