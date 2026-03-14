@@ -38,9 +38,13 @@ function EmployeeProfile() {
       await uploadMeeting({ employee_id: parseInt(id), transcript });
       setTranscript('');
       setShowUpload(false);
-      // Reload data
-      const res = await fetchEmployee(id);
-      setEmployee(res.data);
+      // Reload both data
+      const [empRes, attrRes] = await Promise.all([
+        fetchEmployee(id),
+        fetchAttrition(id)
+      ]);
+      setEmployee(empRes.data);
+      setAttrition(attrRes.data);
     } catch (err) {
       console.error('Upload failed:', err);
     }

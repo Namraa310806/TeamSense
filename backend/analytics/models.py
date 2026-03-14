@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils import timezone
 from employees.models import Employee
 from meetings.models import Meeting
 
@@ -43,3 +44,16 @@ class MeetingAnalysis(models.Model):
 
     def __str__(self):
         return f"Analysis for Meeting {self.meeting.id}"
+
+
+class SentimentInsight(models.Model):
+    employee = models.ForeignKey(Employee, on_delete=models.CASCADE, related_name='sentiment_insights')
+    source_type = models.CharField(max_length=20, default='feedback')  # feedback, meeting, doc
+    sentiment_score = models.FloatField()
+    insights = models.JSONField(default=dict, blank=True)
+    timestamp = models.DateTimeField(default=timezone.now)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Sentiment {self.sentiment_score:.2f} for {self.employee.name}"
+

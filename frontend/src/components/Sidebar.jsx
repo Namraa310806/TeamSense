@@ -1,11 +1,12 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Brain, LogOut, AudioLines, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Users, Brain, LogOut, AudioLines, ShieldCheck, Upload } from 'lucide-react';
 
 const BASE_NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/employees', icon: Users, label: 'Employees' },
   { to: '/meeting-analysis', icon: AudioLines, label: 'Meeting Intelligence' },
   { to: '/ai-assistant', icon: Brain, label: 'AI Assistant' },
+  { to: '/ingestion', icon: Upload, label: 'Ingestion' },
 ];
 
 const CHR_NAV_ITEMS = [

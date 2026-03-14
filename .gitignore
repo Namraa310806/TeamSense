@@ -1,66 +1,32 @@
-# -----------------------------
-# Environment files
-# -----------------------------
-.env
-.env.*
-!.env.example
-
-# -----------------------------
-# OS / editor
-# -----------------------------
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
-
-# -----------------------------
-# Python / Django
-# -----------------------------
+# Bytecode & optimized files
 __pycache__/
 *.py[cod]
-*.pyo
-*.pyd
-*.so
-*.egg-info/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-.coverage
-htmlcov/
+*$py.class
 
-# Virtual environments
-.venv/
+# Django
+db.sqlite3
+media/
+
+# Virtual envs
 venv/
 env/
+.venv/
+ENV/
 
-# Django local/runtime artifacts
-backend/db.sqlite3
-*.sqlite3
-backend/staticfiles/
-backend/media/
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
 
-# Celery/AI local artifacts
-celerybeat-schedule
-faiss.index
-faiss_meta.pkl
-backend/faiss.index
-backend/faiss_meta.pkl
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
-# -----------------------------
-# Node / frontend
-# -----------------------------
-node_modules/
-frontend/node_modules/
+# Frontend build outputs
 frontend/dist/
-frontend/build/
-coverage/
-
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-
-# -----------------------------
-# Docker / logs
-# -----------------------------
-*.log

@@ -4,7 +4,7 @@ django-cors-headers==4.3.1
 psycopg2-binary==2.9.11
 celery==5.3.6
 redis==5.0.3
-django-celery-results==2.5.1
+django-celery_results==2.5.1
 textblob==0.18.0
 openai==2.26.0
 requests==2.32.3
@@ -17,3 +17,13 @@ torch==2.6.0
 sentence-transformers==3.0.1
 faiss-cpu==1.9.0.post1
 Faker==28.4.1
+catboost==1.2.8
+pandas==2.2.2
+slack-sdk==3.30.0
+gspread==6.1.2
+google-auth==2.35.0
+google-auth-oauthlib==1.2.1
+google-auth-httplib2==0.2.0
+PyMuPDF==1.24.10
+openpyxl==3.1.5
+python-multipart==0.0.12

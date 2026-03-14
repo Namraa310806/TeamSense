@@ -1,150 +1,235 @@
-# TeamSense — AI HR Intelligence Platform
+# TeamSense
 
-An AI-powered organizational memory system for HR teams. Ingest employee meeting transcripts, analyze sentiment, extract insights, and query employee history using RAG.
+AI-powered HR intelligence platform for employee analytics, meeting insights, attrition risk support, and unified multi-source data ingestion.
 
-## 🏗️ Architecture
+## What This Project Delivers
 
-```text
-User → React Dashboard → Django REST API → AI Processing Layer → PostgreSQL + PGVector
-                                         → Celery Workers (Redis)
-```
+- Unified HR dashboard for employees, meetings, and AI insights
+- Role-aware access for HR and CHR workflows
+- AI assistant for HR analytics Q and A
+- Meeting intelligence with transcript, summary, and sentiment
+- Attrition support components
+- Data Aggregation Engine that ingests from multiple sources into one normalized pipeline
 
-## 🚀 Quick Start
+## Data Aggregation Engine
 
-### Traditional Local Run (No Docker)
+The ingestion system is designed so HR teams do not manually consolidate employee data.
 
-This is the fastest development path when Docker builds are slow.
+### Stage 1: Data Connectors
 
-Prerequisites:
+- HRMS integration path (Zoho command and connector scaffolding)
+- CSV and Excel upload connector
+- Slack connector
+- Google Forms connector
+- Internal document connector for meeting notes
 
-- Python 3.10+
-- Node.js 18+
-- ffmpeg available on PATH (required for meeting recording upload)
+### Stage 2: Data Normalization
 
-Step 1: Create local env file.
+All source inputs are normalized to a unified internal format.
 
-```bash
-copy .env.local.example .env
-```
+Employee Data
 
-Step 2: Install backend dependencies.
+- employee_id
+- name
+- department
+- manager
+- join_date
 
-```bash
-cd backend
-pip install -r requirements.txt
-```
+Feedback Data
 
-Step 3: Run terminals (3-4 terminals).
+- employee
+- source
+- sentiment
+- timestamp
 
-Terminal 1 (backend API):
+Meeting Data
 
-```bash
-cd backend
-py -3 manage.py migrate
-py -3 manage.py runserver
-```
+- participants
+- summary
+- sentiment
 
-Terminal 2 (frontend):
+### Stage 3: Storage
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+Normalized records are persisted into:
 
-Terminal 3 (seed demo data once):
+- Employee
+- Feedback
+- Meeting
+- Sentiment Insights
 
-```bash
-cd backend
-py -3 manage.py seed_data
-```
+### Stage 4: AI Processing
 
-Terminal 4 (optional celery worker):
+Each normalized payload is routed through AI processing for:
 
-```bash
-cd backend
-py -3 -m celery -A teamsense worker -l info -P solo
-```
+- sentiment analysis
+- summarization
+- insight generation
 
-Notes:
+### Stage 5: Dashboard Sync
 
-- With `CELERY_TASK_ALWAYS_EAGER=True` in `.env`, async tasks run inline, so Terminal 4 is optional.
-- Frontend runs at `<http://localhost:5173>` and proxies API calls to backend at `<http://localhost:8000>`.
+Processed records automatically update employee profile views and ingestion status dashboards.
 
-### Docker (Optional)
+## Tech Stack
 
-```bash
-docker compose up --build
-```
+Backend
 
-- Frontend: <http://localhost:3000>
+- Django + Django REST Framework
+- Celery + Redis
+- SQLite for local development
+- PostgreSQL service in Docker environment
 
-## 📡 API Endpoints
+Frontend
 
-- POST `/api/auth/login/` - Login
-- POST `/api/auth/register/` - Register
-- GET `/api/dashboard/` - Dashboard summary
-- GET `/api/employees/` - List employees
-- GET `/api/employees/{id}/` - Employee profile
-- POST `/api/employees/` - Create employee
-- POST `/api/meetings/upload/` - Upload meeting file/transcript for async intelligence pipeline
-- GET `/api/meetings/transcript?meeting_id={id}` - Meeting transcript + segments
-- GET `/api/meetings/summary?meeting_id={id}` - Meeting summary payload
-- POST `/api/meetings/map-speakers/` - Map diarized speakers to employee IDs
-- GET `/api/meetings/{id}/insights/` - Meeting-level intelligence output
-- POST `/api/meetings/upload-recording/` - Upload audio/video for ASR + analysis
-- GET `/api/meetings/analysis/{meeting_id}/` - Meeting analysis detail
-- GET `/api/meetings/analysis/employee/{employee_id}/` - Employee trend insights (legacy route)
-- GET `/api/employees/{id}/meeting-insights/` - Employee-level meeting intelligence metrics
-- GET `/api/meetings/` - List meetings
-- GET `/api/employee-insights/{id}/` - AI insights
-- GET `/api/attrition?employee_id={id}` - Attrition risk
-- POST `/api/ai/query/` - RAG AI query
+- React + Vite
+- Axios
+- React Router
 
-## 🤖 AI Features
+AI and Data
 
-- **Transcript Summarization** — OpenAI or extractive fallback
-- **Sentiment Analysis** — TextBlob (local, no API key)
-- **Embedding Generation** — OpenAI ada-002 or deterministic fallback
-- **RAG Pipeline** — Query → Embed → Vector Search → LLM Answer
-- **Topic Extraction** — Keyword-based NLP
-- **Attrition Prediction** — Rule-based risk scoring
+- TextBlob sentiment
+- Transformer ecosystem dependencies
+- Pandas and OpenPyXL for tabular ingestion
 
-## 🧠 Meeting Intelligence Pipeline
+## Project Structure
 
-```text
-Upload Meeting (file + participants)
-    -> Celery Task Queue
-    -> Whisper ASR with timestamps
-    -> Speaker diarization labels (Speaker_1..N)
-    -> Transcript segment storage
-    -> Existing transformer sentiment + summarization services
-    -> Employee-level participation/engagement metrics
-    -> Dashboard aggregates
-```
+- backend: Django APIs, AI services, ingestion workers
+- frontend: React application and pages
+- docker: Dockerfiles and entrypoint scripts
+- docker-compose.yml: full stack services
 
-The pipeline reuses existing transformer-based sentiment and summarization services without modifying their internal logic.
+## Environment Variables
 
-## 🔑 Environment Variables
+Create a root .env file and fill only values you need.
 
-Add `OPENAI_API_KEY` to `.env` for full AI capabilities. System works without it using built-in fallbacks.
+Core
 
-## 📁 Project Structure
+- DEBUG=True
+- DJANGO_SECRET_KEY=replace_with_secure_key
+- ALLOWED_HOSTS=*
+- CELERY_BROKER_URL=redis://localhost:6379/0
 
-```text
-TeamSense/
-├── backend/
-│   ├── teamsense/        # Django project settings
-│   ├── core/             # URL routing, seed data
-│   ├── employees/        # Employee CRUD
-│   ├── meetings/         # Meeting upload & Celery tasks
-│   ├── analytics/        # Dashboard, insights, attrition
-│   └── ai_engine/        # Summarizer, sentiment, RAG, embeddings
-├── frontend/
-│   └── src/
-│       ├── pages/        # Dashboard, Employees, Profile, AI Assistant
-│       ├── components/   # Sidebar
-│       └── services/     # API client
-├── docker/               # Dockerfiles
-└── docker-compose.yml
-```
+Optional Connectors
+
+- SLACK_BOT_TOKEN=your_slack_bot_token
+- GOOGLE_SERVICE_ACCOUNT=path_to_google_service_account_json
+- OPENAI_API_KEY=optional_for_openai_features
+
+Zoho Connector
+
+- ZOHO_CLIENT_ID=your_client_id
+- ZOHO_CLIENT_SECRET=your_client_secret
+- ZOHO_REDIRECT_URI=<http://localhost:8000/api/ingestion/zoho-callback/>
+
+Security note
+
+- Never commit real secrets to git.
+
+## Local Development Setup
+
+Backend terminal
+
+1. cd backend
+2. pip install -r requirements.txt
+3. python manage.py migrate
+4. python manage.py seed_data
+5. python manage.py runserver
+
+Celery worker terminal
+
+1. cd backend
+2. celery -A teamsense worker -l info
+
+Frontend terminal
+
+1. cd frontend
+2. npm install
+3. npm run dev
+
+App URLs
+
+- Frontend: <http://localhost:5173>
+- Backend API: <http://localhost:8000/api>
+
+## Docker Setup
+
+Run everything with Docker:
+
+1. docker compose up --build
+
+Default service ports
+
+- Frontend: 3000
+- Backend: 8000
+- PostgreSQL: 5432
+- Redis: 6379
+
+## Ingestion APIs
+
+Main endpoints under /api/ingestion:
+
+- POST /upload-csv/
+- POST /slack/
+- POST /google-forms/
+- POST /upload-document/
+- GET /overview/
+- GET /jobs/
+- GET /feedback/
+
+Behavior
+
+- Requests create async ingestion jobs
+- Jobs are processed by Celery workers
+- Status can be tracked from jobs and overview endpoints
+
+## Typical Ingestion Flow
+
+1. Queue data from one connector
+2. Pipeline normalizes records into internal schema
+3. Data is persisted to Employee, Feedback, Meeting, and Sentiment Insights
+4. AI enriches records with sentiment, summaries, and insights
+5. Dashboard updates with latest job and profile data
+
+## Quality Checks
+
+Backend
+
+- python manage.py check
+
+Frontend
+
+- npm run build
+
+## Troubleshooting
+
+Backend does not start
+
+- Ensure migrations are applied
+- Ensure dependencies are installed
+- Verify .env variables for optional connectors
+
+Celery worker fails
+
+- Confirm Redis is running
+- Check CELERY_BROKER_URL value
+
+Frontend white screen
+
+- Run npm run build to catch compile issues
+- Open browser console and resolve runtime import errors
+
+Ingestion jobs remain queued
+
+- Ensure Celery worker is running
+- Check backend logs for job failures
+
+## Recommended Demo Sequence
+
+1. Login as HR or CHR user
+2. Open Ingestion page
+3. Queue one CSV ingestion and one document ingestion
+4. Open Jobs section and verify status transitions
+5. Open employee and meeting pages to show auto-updated insights
+
+## License
+
+Use according to your team or hackathon guidelines.
