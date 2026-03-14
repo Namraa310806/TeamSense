@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Brain, LogOut, AudioLines, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Users, Brain, LogOut, AudioLines, ShieldCheck, Upload } from 'lucide-react';
 
 const BASE_NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },

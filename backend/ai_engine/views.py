@@ -7,7 +7,7 @@ from ai_services.vector_store import FaissVectorStore
 from ai_services.assistant_service import AssistantService
 from employees.models import Employee
 from meetings.models import Meeting
-from analytics.models import EmployeeInsight
+from analytics.models import EmployeeInsight, MeetingAnalysis
 
 SAFE_REFUSAL = "I am not supposed to answer this because relevant meeting content could not be extracted confidently."
 
@@ -43,26 +43,41 @@ def hr_assistant(request):
         try:
             emp = Employee.objects.get(id=employee_id)
             context_parts.append(f"Employee: {emp.name}, Dept: {emp.department}, Role: {emp.role}")
-            meetings = Meeting.objects.filter(employee=emp)
+            meetings = Meeting.objects.filter(employee=emp).order_by('-date')[:8]
             for m in meetings:
-                context_parts.append(f"Meeting summary: {m.summary}")
-                context_parts.append(f"Sentiment: {m.sentiment_score}")
+                context_parts.append(
+                    f"Meeting {m.id} on {m.date}: summary={m.summary or 'N/A'}; sentiment={m.sentiment_score}"
+                )
+
+                analysis = MeetingAnalysis.objects.filter(meeting=m).first()
+                if analysis:
+                    context_parts.append(
+                        "Analysis signals: "
+                        f"engagement={analysis.engagement_signals}; "
+                        f"conflict={analysis.conflict_detection}; "
+                        f"participation_score={analysis.participation_score}"
+                    )
         except Employee.DoesNotExist:
             pass
         try:
             insight = EmployeeInsight.objects.get(employee_id=employee_id)
-            context_parts.append(f"Insights: {insight.concerns}, Burnout risk: {insight.burnout_risk}")
+            context_parts.append(
+                f"Employee insights: concerns={insight.concerns}; strengths={insight.strengths}; "
+                f"career_goals={insight.career_goals}; burnout_risk={insight.burnout_risk}"
+            )
         except EmployeeInsight.DoesNotExist:
             pass
     else:
         # General context: last 5 meeting summaries
-        for m in Meeting.objects.order_by('-date')[:5]:
-            context_parts.append(f"Meeting summary: {m.summary}")
+        for m in Meeting.objects.order_by('-date')[:10]:
+            context_parts.append(
+                f"Meeting {m.id} with {m.employee.name} on {m.date}: summary={m.summary or 'N/A'}; sentiment={m.sentiment_score}"
+            )
 
     if len(context_parts) < 2:
         return Response({'answer': SAFE_REFUSAL})
 
-    context = '\n'.join(context_parts)
+    context = '\n'.join(part for part in context_parts if part and str(part).strip())
     assistant = AssistantService()
     grounded_question = (
         f"{question}\n\n"
