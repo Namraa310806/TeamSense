@@ -6,4 +6,6 @@ urlpatterns = [
     path('', include('analytics.urls')),
     path('ai/', include('ai_engine.urls')),
     path('accounts/', include('accounts.urls')),
+    path('ingestion/', include('ingestion.urls')),
 ]
+

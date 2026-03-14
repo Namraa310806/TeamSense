@@ -5,6 +5,7 @@ const navItems = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/employees', icon: Users, label: 'Employees' },
   { to: '/ai-assistant', icon: Brain, label: 'AI Assistant' },
+  { to: '/ingestion', icon: Upload, label: 'Ingestion' },
 ];
 
 const ROLE_COLORS = {

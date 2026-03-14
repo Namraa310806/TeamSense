@@ -1,86 +1,43 @@
-# TeamSense — AI HR Intelligence Platform
+# TeamSense - HR Data Ingestion Pipeline
 
-An AI-powered organizational memory system for HR teams. Ingest employee meeting transcripts, analyze sentiment, extract insights, and query employee history using RAG.
-
-## 🏗️ Architecture
+## Placeholders to Replace ( .env )
 
 ```
-User → React Dashboard → Django REST API → AI Processing Layer → PostgreSQL + PGVector
-                                         → Celery Workers (Redis)
+ZOHO_CLIENT_ID=1000.IWODHOTGDFG94MSNMF0G75QX8YE77V
+ZOHO_CLIENT_SECRET=3530ff12f3ca2142525ba2fc54faaa2cee0b3f2871
+ZOHO_REDIRECT_URI=http://localhost:8000/api/ingestion/zoho-callback/
+
+SLACK_BOT_TOKEN=xoxb-your-bot-token  # Slack App Bot Token
+SLACK_CHANNEL=#hr-feedback
+
+GOOGLE_SERVICE_ACCOUNT=path/to/service_account.json  # Download from Google Console
+GOOGLE_FORM_ID=1your_google_form_id_here
+
+BAMBOOHR_SUBDOMAIN=yourcompany  # mycompany.bamboohr.com
+BAMBOOHR_API_KEY=your_api_key:x
 ```
 
-## 🚀 Quick Start
-
-### Docker (Recommended)
-
-```bash
-docker-compose up --build
+## Run Local
 ```
-
-- Frontend: http://localhost:3000
-
-### Local Development
-
-**Backend:**
-```bash
 cd backend
+pip install -r requirements.txt
+python manage.py makemigrations
 python manage.py migrate
-python manage.py runserver
+python manage.py populate_dummy  # Test data
+celery -A teamsense worker -l info  # Terminal 2
+python manage.py runserver  # localhost:8000
 ```
+Frontend: `cd frontend && npm run dev` → localhost:5173/ingestion
 
-**Frontend:**
-```bash
-cd frontend
-npm install
-npm run dev
-```
+## Test Connectors
+- **CSV**: localhost:5173/ingestion upload
+- **Zoho**: localhost:8000/api/ingestion/zoho-auth/
+- **Slack**: `python manage.py ingest_slack`
+- **Forms**: `python manage.py ingest_forms`
+- **Data**: localhost:8000/api/ingestion/feedback/
 
-**Celery Worker (optional):**
-```bash
-cd backend
-celery -A teamsense worker -l info
+## BambooHR API Key
+1. BambooHR → Profile → API Keys → Generate
+2. Basic Auth: `{key}:x`
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/dashboard/` | Dashboard summary |
-| GET | `/api/employees/` | List employees |
-| GET | `/api/employees/{id}/` | Employee profile |
-| POST | `/api/employees/` | Create employee |
-| POST | `/api/meetings/upload/` | Upload transcript |
-| GET | `/api/meetings/` | List meetings |
-| GET | `/api/employee-insights/{id}/` | AI insights |
-| GET | `/api/attrition/{id}/` | Attrition risk |
-| POST | `/api/ai/query/` | RAG AI query |
-
-## 🤖 AI Features
-
-- **Transcript Summarization** — OpenAI or extractive fallback
-- **Sentiment Analysis** — TextBlob (local, no API key)
-- **Embedding Generation** — OpenAI ada-002 or deterministic fallback
-- **RAG Pipeline** — Query → Embed → Vector Search → LLM Answer
-- **Topic Extraction** — Keyword-based NLP
-- **Attrition Prediction** — Rule-based risk scoring
-
-## 🔑 Environment Variables
-
-Add `OPENAI_API_KEY` to `.env` for full AI capabilities. System works without it using built-in fallbacks.
-
-## 📁 Project Structure
-
-```
-TeamSense/
-├── backend/
-│   ├── teamsense/        # Django project settings
-│   ├── core/             # URL routing, seed data
-│   ├── employees/        # Employee CRUD
-│   ├── meetings/         # Meeting upload & Celery tasks
-│   ├── analytics/        # Dashboard, insights, attrition
-│   └── ai_engine/        # Summarizer, sentiment, RAG, embeddings
-├── frontend/
-│   └── src/
-│       ├── pages/        # Dashboard, Employees, Profile, AI Assistant
-│       ├── components/   # Sidebar
-│       └── services/     # API client
-├── docker/               # Dockerfiles
-└── docker-compose.yml
-```
+Ready. Replace placeholders → live data.

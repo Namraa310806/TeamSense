@@ -30,12 +30,12 @@ def load_or_train_model():
     df['Attrition'] = (df['Attrition'] == 'Yes').astype(int)
     
     # Create same features from HR data (aggregate/mimic)
-    df['avg_sentiment'] = 0.5 + 0.1 * (df['JobSatisfaction'].values - 3) / 4  # Map satisfaction
+    df['avg_sentiment'] = 0.5 + 0.1 * (df['JobSatisfaction'] - 3) / 4.0  # Map satisfaction, ensure float
     df['sentiment_decline'] = np.random.normal(0.1, 0.1, len(df))  # Derived from tenure changes
-    df['concern_count'] = (df['YearsSinceLastPromotion'].values > 2).astype(int) * np.random.poisson(1, len(df))
+    df['concern_count'] = (df['YearsSinceLastPromotion'] > 2).astype(float) * np.random.poisson(1, len(df))
     df['days_since_last'] = 30 * df['YearsSinceLastPromotion'] + np.random.exponential(30, len(df))
-    df['burnout_risk'] = 0.3 + 0.2 * (df['TotalWorkingYears'] > 10).astype(int) + 0.2 * (df['OverTime'] == 'Yes').astype(int)
-    df['meeting_count'] = np.random.poisson(3 + df['JobLevel'], len(df))
+    df['burnout_risk'] = 0.3 + 0.2 * (df['TotalWorkingYears'] > 10).astype(float) + 0.2 * (df['OverTime'] == 'Yes').astype(float)
+    df['meeting_count'] = np.random.poisson(3 + df['JobLevel'].astype(float), len(df))
     
     feature_names = ['avg_sentiment', 'sentiment_decline', 'concern_count', 
                      'days_since_last', 'burnout_risk', 'meeting_count']

@@ -29,6 +29,7 @@ INSTALLED_APPS = [
     'meetings',
     'analytics',
     'ai_engine',
+    'ingestion',
     'accounts',
 ]
 
@@ -64,24 +65,16 @@ TEMPLATES = [
 WSGI_APPLICATION = 'teamsense.wsgi.application'
 
 # Database - SQLite for development, PostgreSQL for production
-if os.getenv('USE_POSTGRES', 'False').lower() in ('true', '1', 'yes'):
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.getenv('DB_NAME', 'teamsense'),
-            'USER': os.getenv('DB_USER', 'teamsense'),
-            'PASSWORD': os.getenv('DB_PASSWORD', 'teamsense123'),
-            'HOST': os.getenv('DB_HOST', 'localhost'),
-            'PORT': os.getenv('DB_PORT', '5432'),
-        }
+# Local SQLite (no Docker)
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+}
+
+CELERY_BROKER_URL = 'redis://localhost:6379/0'  # Local Redis
+CELERY_RESULT_BACKEND = 'django-db'
 
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
@@ -128,3 +121,4 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', '')
 
 # Embedding dimensions
 EMBEDDING_DIMENSIONS = 1536
+
