@@ -224,55 +224,6 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* Recent Meetings */}
-      <div className="glass-card p-6 animate-fade-in">
-        <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
-          <MessageSquare className="w-5 h-5 text-cyan-500" />
-          Recent Meetings
-        </h2>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-gray-200">
-                <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Employee</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Date</th>
-                <th className="text-left py-3 px-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Sentiment</th>
-                <th className="text-right py-3 px-4 text-xs font-medium text-slate-500 uppercase tracking-wider">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data?.recent_meetings?.map((meeting) => (
-                <tr key={meeting.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-                  <td className="py-3 px-4">
-                    <span className="text-slate-800 font-medium">{meeting.employee_name}</span>
-                  </td>
-                  <td className="py-3 px-4 text-slate-500 text-sm">{meeting.date}</td>
-                  <td className="py-3 px-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-24 h-2 rounded-full bg-gray-200 overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
-                          style={{
-                            width: `${(meeting.sentiment_score || 0) * 100}%`,
-                            backgroundColor: meeting.sentiment_score > 0.6 ? '#10b981' : meeting.sentiment_score > 0.4 ? '#f59e0b' : '#f43f5e',
-                          }}
-                        />
-                      </div>
-                      <span className="text-xs text-slate-500">{meeting.sentiment_score?.toFixed(2)}</span>
-                    </div>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <Link to={`/meetings/${meeting.id}`} className="text-green-600 hover:text-green-700 text-sm font-medium transition-colors">
-                      View →
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       {/* Meeting Intelligence */}
       <div className="glass-card p-6 animate-fade-in">
         <h2 className="text-lg font-semibold text-slate-800 mb-4">Meeting Intelligence</h2>

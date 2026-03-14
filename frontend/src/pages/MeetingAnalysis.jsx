@@ -104,6 +104,11 @@ function MeetingAnalysis() {
     return selectedMeeting.employee_name || 'Unknown participants';
   }, [selectedMeeting]);
 
+  const shouldScrollMeetingList = meetings.length > 8;
+  const insightItems = selectedMeetingInsights?.meeting_insights || [];
+  const shouldScrollInsightItems = insightItems.length > 8;
+  const shouldScrollTranscript = selectedMeetingTranscriptSegments.length > 14;
+
   const loadEmployees = async () => {
     try {
       const res = await fetchEmployees();
@@ -340,13 +345,13 @@ function MeetingAnalysis() {
           </button>
         </form>
 
-        <div className="xl:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="glass-card p-6">
+        <div className="xl:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+          <div className="glass-card p-6 min-h-[520px] flex flex-col">
             <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-4">
               <Users className="w-5 h-5 text-cyan-600" /> Meeting List
             </h2>
 
-            <div className="space-y-3 max-h-[430px] overflow-y-auto pr-1">
+            <div className={`space-y-3 pr-1 flex-1 ${shouldScrollMeetingList ? 'max-h-[640px] overflow-y-auto' : ''}`}>
               {meetings.map((meeting) => (
                 <button
                   key={meeting.id}
@@ -366,7 +371,7 @@ function MeetingAnalysis() {
                       {meeting.sentiment_score != null ? (meeting.sentiment_score).toFixed(2) : 'N/A'}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-2 truncate">Participants: {(meeting.participant_names || []).join(', ') || meeting.employee_name || 'N/A'}</p>
+                  <p className="text-xs text-slate-500 mt-2 break-words">Participants: {(meeting.participant_names || []).join(', ') || meeting.employee_name || 'N/A'}</p>
                   <div className="mt-2">
                     <span className={`inline-flex px-2 py-0.5 rounded-md border text-xs ${statusClass(meeting.transcript_status)}`}>
                       {meeting.transcript_status || 'PENDING'}
@@ -381,7 +386,7 @@ function MeetingAnalysis() {
             </div>
           </div>
 
-          <div className="glass-card p-6">
+          <div className="glass-card p-6 min-h-[520px] flex flex-col">
             <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2 mb-4">
               <Sparkles className="w-5 h-5 text-emerald-600" /> AI Insights Panel
             </h2>
@@ -390,7 +395,7 @@ function MeetingAnalysis() {
             {loadingMeetingDetails && <p className="text-slate-500 text-sm">Loading meeting details...</p>}
 
             {selectedMeeting && (
-              <div className="space-y-4 text-sm">
+              <div className="space-y-4 text-sm flex-1">
                 <div>
                   <p className="text-xs text-slate-500">Meeting</p>
                   <p className="text-slate-800 font-medium">{selectedMeeting.meeting_title || `Meeting #${selectedMeeting.id}`}</p>
@@ -427,14 +432,14 @@ function MeetingAnalysis() {
 
                 <div>
                   <p className="text-xs text-slate-500 mb-2">Action Items / Topics / Risks</p>
-                  <div className="space-y-2 max-h-32 overflow-y-auto pr-1">
-                    {(selectedMeetingInsights?.meeting_insights || []).slice(0, 8).map((insight) => (
+                  <div className={`space-y-2 pr-1 ${shouldScrollInsightItems ? 'max-h-64 overflow-y-auto' : ''}`}>
+                    {insightItems.map((insight) => (
                       <div key={insight.id} className="bg-white border border-gray-200 rounded-lg p-2 text-xs text-slate-700">
                         <span className="text-cyan-600 font-medium mr-1">{insight.insight_type}:</span>
                         {insight.description}
                       </div>
                     ))}
-                    {(!selectedMeetingInsights?.meeting_insights || selectedMeetingInsights.meeting_insights.length === 0) && (
+                    {insightItems.length === 0 && (
                       <p className="text-slate-500 text-xs">Insights will appear after analysis.</p>
                     )}
                   </div>
@@ -464,7 +469,7 @@ function MeetingAnalysis() {
         {!selectedMeeting && <p className="text-slate-500 text-sm">Choose a meeting to view transcript chat.</p>}
 
         {selectedMeeting && (
-          <div className="max-h-[420px] overflow-y-auto space-y-3 pr-1">
+          <div className={`space-y-3 pr-1 ${shouldScrollTranscript ? 'max-h-[520px] overflow-y-auto' : ''}`}>
             {selectedMeetingTranscriptSegments.map((segment) => (
               <div key={segment.id} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
                 <div className="flex items-center justify-between mb-1">

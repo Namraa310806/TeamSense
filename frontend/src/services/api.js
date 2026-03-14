@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { showToast } from '../utils/toast';
 
 const API_BASE = '/api';
 
@@ -67,8 +68,29 @@ api.interceptors.request.use((config) => {
 });
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const showToastForRequest = response?.config?.meta?.showToast === true;
+    if (showToastForRequest) {
+      const successMessage =
+        response?.data?.message
+        || response?.data?.detail
+        || 'Action completed successfully.';
+      showToast(successMessage, 'success', 2000);
+    }
+
+    return response;
+  },
   (error) => {
+    const showToastForRequest = error?.config?.meta?.showToast === true;
+    if (showToastForRequest) {
+      const errorMessage =
+        error?.response?.data?.error
+        || error?.response?.data?.message
+        || error?.response?.data?.detail
+        || 'Something went wrong. Please try again.';
+      showToast(errorMessage, 'error', 2000);
+    }
+
     if (error?.response?.status === 401 && !isDemoMode()) {
       clearSessionAndRedirect();
     }
@@ -82,7 +104,7 @@ export const fetchDashboard = () => api.get('/dashboard/');
 // Employees
 export const fetchEmployees = () => api.get('/employees/');
 export const fetchEmployee = (id) => api.get(`/employees/${id}/`);
-export const createEmployee = (data) => api.post('/employees/', data);
+export const createEmployee = (data) => api.post('/employees/', data, { meta: { showToast: true } });
 
 // Meetings
 export const fetchMeetings = (employeeId) => {
@@ -97,39 +119,44 @@ export const fetchMeetingSummary = (meetingId) =>
 export const uploadMeeting = (formData) =>
   api.post('/meetings/upload/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    meta: { showToast: true },
   });
 export const uploadMeetingRecording = (formData) =>
   api.post('/meetings/upload-recording/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    meta: { showToast: true },
   });
 export const fetchMeetingAnalysis = (meetingId) => api.get(`/meetings/analysis/${meetingId}/`);
 export const fetchMeetingInsights = (meetingId) => api.get(`/meetings/${meetingId}/insights/`);
-export const mapMeetingSpeakers = (payload) => api.post('/meetings/map-speakers/', payload);
+export const mapMeetingSpeakers = (payload) => api.post('/meetings/map-speakers/', payload, { meta: { showToast: true } });
 export const fetchEmployeeMeetingInsights = (employeeId) =>
   api.get(`/employees/${employeeId}/meeting-insights/`);
 
 export const uploadCsvFeedback = (file) => {
   const formData = new FormData();
   formData.append('file', file);
-  return api.post('/ingestion/upload-csv/', formData, {
+  return api.post('/ingestion/csv/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    meta: { showToast: true },
   });
 };
 
-export const ingestSlackData = (payload) => api.post('/ingestion/slack/', payload);
+export const ingestSlackData = (payload) => api.post('/ingestion/slack/', payload, { meta: { showToast: true } });
 
-export const ingestGoogleFormsData = (payload) => api.post('/ingestion/google-forms/', payload);
+export const ingestGoogleFormsData = (payload) => api.post('/ingestion/forms/', payload, { meta: { showToast: true } });
 
 export const uploadIngestionDocument = ({ file, employeeId, participants }) => {
   const formData = new FormData();
   formData.append('file', file);
   if (employeeId) formData.append('employee_id', String(employeeId));
   if (participants) formData.append('participants', participants);
-  return api.post('/ingestion/upload-document/', formData, {
+  return api.post('/ingestion/document/', formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
+    meta: { showToast: true },
   });
 };
 
+export const fetchIngestionStats = () => api.get('/ingestion/stats/');
 export const fetchIngestionOverview = () => api.get('/ingestion/overview/');
 export const fetchIngestionJobs = () => api.get('/ingestion/jobs/');
 
@@ -146,9 +173,13 @@ export const fetchAttrition = (employeeId) =>
 export const aiQuery = (query, employeeId = null) =>
   api.post('/ai/query/', { query, employee_id: employeeId });
 
+// HR Assistant (OpenAI-backed)
+export const hrAssistantQuery = (query, employeeId = null) =>
+  api.post('/ai/hr-assistant/', { question: query, employee_id: employeeId });
+
 // HR User Management (CHR only)
 export const fetchHRUsers = () => api.get('/accounts/hr-users/');
-export const addHRUser = (data) => api.post('/accounts/hr-users/', data);
-export const deleteHRUser = (id) => api.delete(`/accounts/hr-users/${id}/`);
+export const addHRUser = (data) => api.post('/accounts/hr-users/', data, { meta: { showToast: true } });
+export const deleteHRUser = (id) => api.delete(`/accounts/hr-users/${id}/`, { meta: { showToast: true } });
 
 export default api;

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Send, Brain, User, Sparkles, BookOpen, Loader2 } from 'lucide-react';
-import { aiQuery } from '../services/api';
+import { hrAssistantQuery } from '../services/api';
 
 const SUGGESTIONS = [
   "What are the common concerns across employees?",
@@ -38,7 +38,7 @@ function AIAssistant() {
     setLoading(true);
 
     try {
-      const res = await aiQuery(query);
+      const res = await hrAssistantQuery(query);
       const data = res.data;
 
       let aiContent = data.answer || 'I found some relevant information but could not generate a specific answer.';

@@ -5,7 +5,6 @@ const BASE_NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/employees', icon: Users, label: 'Employees' },
   { to: '/meeting-analysis', icon: AudioLines, label: 'Meeting Intelligence' },
-  { to: '/ai-assistant', icon: Brain, label: 'AI Assistant' },
   { to: '/ingestion', icon: Upload, label: 'Ingestion' },
 ];
 

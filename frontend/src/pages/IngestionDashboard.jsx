@@ -1,14 +1,24 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  fetchIngestionStats,
   fetchIngestionJobs,
-  fetchIngestionOverview,
   ingestGoogleFormsData,
   ingestSlackData,
   uploadCsvFeedback,
   uploadIngestionDocument,
 } from '../services/api';
+import { showToast } from '../utils/toast';
 
 const CARD = 'bg-white border border-slate-200 rounded-2xl shadow-sm';
+const SNAPSHOT_KEY = 'ingestion_dashboard_snapshot_v1';
+const EMPTY_OVERVIEW = {
+  counts: {
+    employees: 0,
+    feedback: 0,
+    meetings: 0,
+    sentiment_insights: 0,
+  },
+};
 
 function formatDate(value) {
   if (!value) return 'N/A';
@@ -25,11 +35,69 @@ function parseJsonArray(jsonText) {
   return parsed;
 }
 
+function toNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function normalizeOverview(raw) {
+  const counts = raw?.counts || raw || {};
+  return {
+    ...EMPTY_OVERVIEW,
+    ...raw,
+    counts: {
+      employees: toNumber(counts.employees),
+      feedback: toNumber(counts.feedback),
+      meetings: toNumber(counts.meetings),
+      sentiment_insights: toNumber(counts.sentiment_insights ?? counts.insights),
+    },
+  };
+}
+
+function normalizeJobs(rawJobs) {
+  if (!Array.isArray(rawJobs)) return [];
+  return rawJobs.map((job) => ({
+    ...job,
+    records_processed: toNumber(job?.records_processed),
+  }));
+}
+
+function readSnapshot() {
+  try {
+    const raw = localStorage.getItem(SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return {
+      overview: normalizeOverview(parsed?.overview),
+      jobs: normalizeJobs(parsed?.jobs),
+      savedAt: parsed?.savedAt || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeSnapshot(overview, jobs) {
+  try {
+    localStorage.setItem(
+      SNAPSHOT_KEY,
+      JSON.stringify({
+        overview: normalizeOverview(overview),
+        jobs: normalizeJobs(jobs),
+        savedAt: new Date().toISOString(),
+      }),
+    );
+  } catch {
+    // ignore localStorage failures
+  }
+}
+
 export default function IngestionDashboard() {
-  const [overview, setOverview] = useState(null);
+  const [overview, setOverview] = useState(EMPTY_OVERVIEW);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [status, setStatus] = useState('');
+  const [status, setStatus] = useState('Live data synced from the database.');
+  const [actionLoading, setActionLoading] = useState('');
 
   const [csvFile, setCsvFile] = useState(null);
   const [docFile, setDocFile] = useState(null);
@@ -102,11 +170,24 @@ export default function IngestionDashboard() {
 
   const loadData = async () => {
     try {
-      const [overviewRes, jobsRes] = await Promise.all([fetchIngestionOverview(), fetchIngestionJobs()]);
-      setOverview(overviewRes.data);
-      setJobs(jobsRes.data || []);
+      const [statsRes, jobsRes] = await Promise.all([fetchIngestionStats(), fetchIngestionJobs()]);
+      const nextOverview = normalizeOverview(statsRes.data);
+      const nextJobs = normalizeJobs(jobsRes.data);
+      setOverview(nextOverview);
+      setJobs(nextJobs);
+      writeSnapshot(nextOverview, nextJobs);
+      setStatus('Live data synced from the database.');
     } catch (error) {
-      setStatus(error?.response?.data?.error || 'Failed to load ingestion dashboard data.');
+      const snapshot = readSnapshot();
+      if (snapshot) {
+        setOverview(snapshot.overview);
+        setJobs(snapshot.jobs);
+        setStatus(`Showing latest available snapshot (${formatDate(snapshot.savedAt)}).`);
+      } else {
+        setOverview(EMPTY_OVERVIEW);
+        setJobs([]);
+        setStatus('No database snapshot available yet. Please refresh after data is ingested.');
+      }
     } finally {
       setLoading(false);
     }
@@ -116,24 +197,27 @@ export default function IngestionDashboard() {
     loadData();
   }, []);
 
-  const queueAndRefresh = async (promiseFactory, successMessage) => {
-    setStatus('Queuing ingestion job...');
+  const queueAndRefresh = async (promiseFactory, successMessage, actionName) => {
+    setActionLoading(actionName);
+    setStatus('Submitting ingestion request...');
     try {
       await promiseFactory();
       setStatus(successMessage);
       await loadData();
     } catch (error) {
-      setStatus(error?.response?.data?.error || 'Failed to queue ingestion job.');
+      setStatus('Request could not be completed. Please verify input and try again.');
+    } finally {
+      setActionLoading('');
     }
   };
 
   const handleCsvSubmit = async (e) => {
     e.preventDefault();
     if (!csvFile) {
-      setStatus('Please choose a CSV or Excel file.');
+      showToast('Please choose a CSV or Excel file first.', 'error', 2000);
       return;
     }
-    await queueAndRefresh(() => uploadCsvFeedback(csvFile), 'CSV/Excel ingestion queued successfully.');
+    await queueAndRefresh(() => uploadCsvFeedback(csvFile), 'CSV/Excel ingestion queued successfully.', 'csv');
   };
 
   const handleSlackSubmit = async (e) => {
@@ -143,9 +227,10 @@ export default function IngestionDashboard() {
       await queueAndRefresh(
         () => ingestSlackData({ channel: slackChannel, messages }),
         'Slack ingestion queued successfully.',
+        'slack',
       );
     } catch (error) {
-      setStatus(error.message || 'Invalid Slack payload JSON.');
+      showToast(error.message || 'Invalid Slack payload JSON.', 'error', 2000);
     }
   };
 
@@ -156,16 +241,17 @@ export default function IngestionDashboard() {
       await queueAndRefresh(
         () => ingestGoogleFormsData({ form_id: formsId, responses }),
         'Google Forms ingestion queued successfully.',
+        'forms',
       );
     } catch (error) {
-      setStatus(error.message || 'Invalid Google Forms payload JSON.');
+      showToast(error.message || 'Invalid Google Forms payload JSON.', 'error', 2000);
     }
   };
 
   const handleDocumentSubmit = async (e) => {
     e.preventDefault();
     if (!docFile) {
-      setStatus('Please choose a meeting note document.');
+      showToast('Please choose a document file first.', 'error', 2000);
       return;
     }
     await queueAndRefresh(
@@ -175,6 +261,7 @@ export default function IngestionDashboard() {
           participants,
         }),
       'Document ingestion queued successfully.',
+      'document',
     );
   };
 
@@ -185,7 +272,16 @@ export default function IngestionDashboard() {
         <p className="mt-2 text-emerald-50">
           Ingest HRMS, CSV/Excel, Slack, Google Forms, and internal documents into one normalized pipeline.
         </p>
-        {status ? <p className="mt-3 text-sm bg-white/15 rounded-lg px-3 py-2 inline-block">{status}</p> : null}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          {status ? <p className="text-sm bg-white/15 rounded-lg px-3 py-2 inline-block">{status}</p> : null}
+          <button
+            type="button"
+            onClick={() => loadData()}
+            className="text-sm bg-white text-emerald-700 hover:bg-emerald-50 rounded-lg px-3 py-2 font-medium"
+          >
+            Refresh Data
+          </button>
+        </div>
       </header>
 
       {loading ? (
@@ -264,8 +360,12 @@ export default function IngestionDashboard() {
                 onChange={(e) => setCsvFile(e.target.files?.[0] || null)}
                 className="w-full border border-slate-300 rounded-lg p-2"
               />
-              <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">
-                Queue CSV/Excel Ingestion
+              <button
+                type="submit"
+                disabled={Boolean(actionLoading)}
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {actionLoading === 'csv' ? 'Submitting...' : 'Queue CSV/Excel Ingestion'}
               </button>
             </form>
 
@@ -273,7 +373,7 @@ export default function IngestionDashboard() {
               <h3 className="text-lg font-semibold text-slate-800">Document Connector</h3>
               <input
                 type="file"
-                accept=".txt,.md,.pdf"
+                accept=".txt,.pdf,.docx"
                 onChange={(e) => setDocFile(e.target.files?.[0] || null)}
                 className="w-full border border-slate-300 rounded-lg p-2"
               />
@@ -284,8 +384,12 @@ export default function IngestionDashboard() {
                 placeholder="Participants (comma-separated)"
                 className="w-full border border-slate-300 rounded-lg p-2"
               />
-              <button type="submit" className="px-4 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700">
-                Queue Document Ingestion
+              <button
+                type="submit"
+                disabled={Boolean(actionLoading)}
+                className="px-4 py-2 rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {actionLoading === 'document' ? 'Submitting...' : 'Queue Document Ingestion'}
               </button>
             </form>
 
@@ -304,8 +408,12 @@ export default function IngestionDashboard() {
                 rows={8}
                 className="w-full border border-slate-300 rounded-lg p-2 font-mono text-xs"
               />
-              <button type="submit" className="px-4 py-2 rounded-lg bg-cyan-700 text-white hover:bg-cyan-800">
-                Queue Slack Ingestion
+              <button
+                type="submit"
+                disabled={Boolean(actionLoading)}
+                className="px-4 py-2 rounded-lg bg-cyan-700 text-white hover:bg-cyan-800 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {actionLoading === 'slack' ? 'Submitting...' : 'Queue Slack Ingestion'}
               </button>
             </form>
 
@@ -324,8 +432,12 @@ export default function IngestionDashboard() {
                 rows={8}
                 className="w-full border border-slate-300 rounded-lg p-2 font-mono text-xs"
               />
-              <button type="submit" className="px-4 py-2 rounded-lg bg-blue-700 text-white hover:bg-blue-800">
-                Queue Forms Ingestion
+              <button
+                type="submit"
+                disabled={Boolean(actionLoading)}
+                className="px-4 py-2 rounded-lg bg-blue-700 text-white hover:bg-blue-800 disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {actionLoading === 'forms' ? 'Submitting...' : 'Queue Forms Ingestion'}
               </button>
             </form>
           </section>
