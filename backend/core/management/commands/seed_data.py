@@ -226,9 +226,12 @@ class Command(BaseCommand):
             status = 'Created' if created else 'Already exists'
             self.stdout.write(f'  {status}: {employee.name}')
 
-        # Create meetings
+        # Create meetings only for employees without any existing meeting records.
+        # This prevents startup from adding more random rows on every container run.
         for i, emp in enumerate(employees):
             if i < len(SAMPLE_TRANSCRIPTS):
+                if Meeting.objects.filter(employee=emp).exists():
+                    continue
                 sample = SAMPLE_TRANSCRIPTS[i]
                 meeting, created = Meeting.objects.get_or_create(
                     employee=emp,
