@@ -10,10 +10,12 @@ from accounts.permissions import IsAdmin, IsExecutive, IsHR
 from analytics.models import MeetingAnalysis
 from analytics.serializers import MeetingAnalysisSerializer
 from employees.models import Employee
-from meetings.models import EmployeeMeetingInsight, Meeting, MeetingParticipant, MeetingSpeakerMapping, MeetingTranscript
+from meetings.models import EmployeeMeetingInsight, Meeting, MeetingInsight, MeetingParticipant, MeetingSpeakerMapping, MeetingTranscript
+from meetings.services.meeting_service import schedule_text_meeting_pipeline, schedule_uploaded_meeting_pipeline
 from meetings.serializers import (
     EmployeeMeetingInsightSerializer,
     MapSpeakersSerializer,
+    MeetingInsightSerializer,
     MeetingSerializer,
     MeetingSpeakerMappingSerializer,
     MeetingTranscriptSerializer,
@@ -87,7 +89,8 @@ def _meeting_queryset_for_user(request):
         return Meeting.objects.select_related('employee', 'organization', 'uploaded_by')
     if org:
         return Meeting.objects.select_related('employee', 'organization', 'uploaded_by').filter(organization=org)
-    return Meeting.objects.none()
+    # Demo mode: if no organization is assigned, do not hide all meetings.
+    return Meeting.objects.select_related('employee', 'organization', 'uploaded_by')
 
 
 @api_view(['POST'])
@@ -128,17 +131,11 @@ def upload_meeting(request):
     _attach_participants(meeting, employees)
 
     if meeting.meeting_file:
-        from meetings.tasks import process_uploaded_meeting_task
-
-        process_uploaded_meeting_task.delay(meeting.id)
-        pipeline_status = 'queued'
+        pipeline_status = schedule_uploaded_meeting_pipeline(meeting.id)
     else:
-        from meetings.tasks import process_transcript_task
-
-        process_transcript_task.delay(meeting.id)
+        pipeline_status = schedule_text_meeting_pipeline(meeting.id)
         meeting.transcript_status = Meeting.TRANSCRIPT_STATUS_COMPLETED
         meeting.save(update_fields=['transcript_status', 'updated_at'])
-        pipeline_status = 'queued'
 
     return Response(
         {
@@ -178,6 +175,52 @@ def meeting_detail(request, pk):
     payload['speaker_mapping'] = MeetingSpeakerMappingSerializer(meeting.speaker_mappings.all(), many=True).data
 
     return Response(payload)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+def meeting_transcript(request):
+    """GET /api/meetings/transcript/?meeting_id=1"""
+    meeting_id = request.query_params.get('meeting_id')
+    if not meeting_id:
+        return Response({'error': 'meeting_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    meeting = _meeting_queryset_for_user(request).filter(id=meeting_id).first()
+    if not meeting:
+        return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(
+        {
+            'meeting_id': meeting.id,
+            'transcript_status': meeting.transcript_status,
+            'transcript': meeting.transcript,
+            'segments': MeetingTranscriptSerializer(
+                meeting.transcript_segments.all().order_by('start_time', 'id'), many=True
+            ).data,
+        }
+    )
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+def meeting_summary(request):
+    """GET /api/meetings/summary/?meeting_id=1"""
+    meeting_id = request.query_params.get('meeting_id')
+    if not meeting_id:
+        return Response({'error': 'meeting_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    meeting = _meeting_queryset_for_user(request).filter(id=meeting_id).first()
+    if not meeting:
+        return Response({'error': 'Meeting not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    return Response(
+        {
+            'meeting_id': meeting.id,
+            'summary': meeting.summary,
+            'sentiment_score': meeting.sentiment_score,
+            'transcript_status': meeting.transcript_status,
+        }
+    )
 
 
 @api_view(['POST'])
@@ -236,6 +279,7 @@ def meeting_insights(request, meeting_id):
         return Response({'error': 'Insights not ready yet'}, status=status.HTTP_404_NOT_FOUND)
 
     employee_insights = EmployeeMeetingInsight.objects.filter(meeting=meeting).select_related('employee')
+    meeting_insights_rows = MeetingInsight.objects.filter(meeting=meeting).order_by('-created_at', 'id')
 
     team_sentiment = analysis.employee_sentiment_scores.get('overall', {}).get('scores', {})
     dominant = employee_insights.order_by('-speaking_turns', '-participation_duration')[:3]
@@ -247,6 +291,7 @@ def meeting_insights(request, meeting_id):
             'analysis': MeetingAnalysisSerializer(analysis).data,
             'team_sentiment_score': float(team_sentiment.get('positive', 0.0)),
             'employee_engagement': EmployeeMeetingInsightSerializer(employee_insights, many=True).data,
+            'meeting_insights': MeetingInsightSerializer(meeting_insights_rows, many=True).data,
             'top_contributors': EmployeeMeetingInsightSerializer(dominant, many=True).data,
             'low_participation_employees': EmployeeMeetingInsightSerializer(low_participation, many=True).data,
         }
@@ -302,16 +347,14 @@ def upload_meeting_recording(request):
     )
     _attach_participants(meeting, employees)
 
-    from meetings.tasks import process_uploaded_meeting_task
-
-    process_uploaded_meeting_task.delay(meeting.id)
+    pipeline_status = schedule_uploaded_meeting_pipeline(meeting.id)
 
     return Response(
         {
             'message': 'Meeting recording uploaded successfully',
             'meeting': MeetingSerializer(meeting).data,
             'participants': [{'id': emp.id, 'name': emp.name} for emp in employees],
-            'pipeline_status': 'queued',
+            'pipeline_status': pipeline_status,
         },
         status=status.HTTP_201_CREATED,
     )

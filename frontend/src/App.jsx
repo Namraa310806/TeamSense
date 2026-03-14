@@ -7,16 +7,52 @@ import MeetingInsights from './pages/MeetingInsights';
 import AIAssistant from './pages/AIAssistant';
 import Login from './pages/Login';
 import MeetingAnalysis from './pages/MeetingAnalysis';
+import Register from './pages/Register';
+import HRManagement from './pages/HRManagement';
+
+function isLikelyJwt(token) {
+  return typeof token === 'string' && token.split('.').length === 3;
+}
+
+function isJwtExpired(token) {
+  try {
+    const payloadBase64 = token.split('.')[1];
+    const payloadJson = atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(payloadJson);
+    if (!payload.exp) return false;
+    return Date.now() >= Number(payload.exp) * 1000;
+  } catch {
+    return true;
+  }
+}
 
 /** Returns true when the user has a valid session stored in localStorage. */
 function isAuthenticated() {
   try {
     const user = localStorage.getItem('user');
     const token = localStorage.getItem('access_token');
-    return !!(user && token);
+    if (!user || !token) return false;
+    if (!isLikelyJwt(token)) return false;
+    if (isJwtExpired(token)) {
+      localStorage.removeItem('user');
+      localStorage.removeItem('access_token');
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
+}
+
+/** Returns the role of the logged-in user from localStorage. */
+function getUserRole() {
+  try {
+    const raw = localStorage.getItem('user');
+    if (raw) return JSON.parse(raw)?.role || null;
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 /** Wraps a route so it redirects to /login when the user is not authenticated. */
@@ -24,6 +60,13 @@ function ProtectedRoute({ children }) {
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
   }
+  return children;
+}
+
+/** Wraps a route so it only allows CHR users; others are sent to /. */
+function CHRProtectedRoute({ children }) {
+  if (!isAuthenticated()) return <Navigate to="/login" replace />;
+  if (getUserRole() !== 'CHR') return <Navigate to="/" replace />;
   return children;
 }
 
@@ -45,6 +88,7 @@ function App() {
       <Routes>
         {/* Public route – full screen, no sidebar */}
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
         {/* Protected routes – require authentication, rendered inside AppLayout */}
         <Route
@@ -93,6 +137,16 @@ function App() {
             <ProtectedRoute>
               <AppLayout><MeetingAnalysis /></AppLayout>
             </ProtectedRoute>
+          }
+        />
+
+        {/* CHR-only route – non-CHR users redirected to / */}
+        <Route
+          path="/hr-management"
+          element={
+            <CHRProtectedRoute>
+              <AppLayout><HRManagement /></AppLayout>
+            </CHRProtectedRoute>
           }
         />
 

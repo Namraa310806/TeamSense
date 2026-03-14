@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import EmployeeMeetingInsight, Meeting, MeetingSpeakerMapping, MeetingTranscript
+from .models import EmployeeMeetingInsight, Meeting, MeetingInsight, MeetingSpeakerMapping, MeetingTranscript
 
 @admin.register(Meeting)
 class MeetingAdmin(admin.ModelAdmin):
@@ -25,3 +25,10 @@ class MeetingSpeakerMappingAdmin(admin.ModelAdmin):
 class EmployeeMeetingInsightAdmin(admin.ModelAdmin):
     list_display = ('employee', 'meeting', 'engagement_score', 'sentiment_score', 'speaking_turns')
     list_filter = ('employee__department',)
+
+
+@admin.register(MeetingInsight)
+class MeetingInsightAdmin(admin.ModelAdmin):
+    list_display = ('meeting', 'insight_type', 'severity', 'created_at')
+    list_filter = ('insight_type', 'severity')
+    search_fields = ('description',)

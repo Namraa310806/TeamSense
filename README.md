@@ -40,8 +40,8 @@ Terminal 1 (backend API):
 
 ```bash
 cd backend
-python manage.py migrate
-python manage.py runserver
+py -3 manage.py migrate
+py -3 manage.py runserver
 ```
 
 Terminal 2 (frontend):
@@ -56,14 +56,14 @@ Terminal 3 (seed demo data once):
 
 ```bash
 cd backend
-python manage.py seed_data
+py -3 manage.py seed_data
 ```
 
 Terminal 4 (optional celery worker):
 
 ```bash
 cd backend
-celery -A teamsense worker -l info
+py -3 -m celery -A teamsense worker -l info -P solo
 ```
 
 Notes:
@@ -81,13 +81,15 @@ docker compose up --build
 
 ## 📡 API Endpoints
 
-- POST `/api/accounts/login/` - Login
+- POST `/api/auth/login/` - Login
+- POST `/api/auth/register/` - Register
 - GET `/api/dashboard/` - Dashboard summary
 - GET `/api/employees/` - List employees
 - GET `/api/employees/{id}/` - Employee profile
 - POST `/api/employees/` - Create employee
-- POST `/api/meetings/upload/` - Upload transcript
 - POST `/api/meetings/upload/` - Upload meeting file/transcript for async intelligence pipeline
+- GET `/api/meetings/transcript?meeting_id={id}` - Meeting transcript + segments
+- GET `/api/meetings/summary?meeting_id={id}` - Meeting summary payload
 - POST `/api/meetings/map-speakers/` - Map diarized speakers to employee IDs
 - GET `/api/meetings/{id}/insights/` - Meeting-level intelligence output
 - POST `/api/meetings/upload-recording/` - Upload audio/video for ASR + analysis
@@ -96,7 +98,7 @@ docker compose up --build
 - GET `/api/employees/{id}/meeting-insights/` - Employee-level meeting intelligence metrics
 - GET `/api/meetings/` - List meetings
 - GET `/api/employee-insights/{id}/` - AI insights
-- GET `/api/attrition/{id}/` - Attrition risk
+- GET `/api/attrition?employee_id={id}` - Attrition risk
 - POST `/api/ai/query/` - RAG AI query
 
 ## 🤖 AI Features

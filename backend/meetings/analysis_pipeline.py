@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import re
 import subprocess
@@ -7,7 +8,7 @@ from collections import Counter, defaultdict
 
 import numpy as np
 from django.utils import timezone
-from transformers import pipeline
+from ai_engine.model_loader import ModelManager
 
 from analytics.models import MeetingAnalysis
 from ai_services.sentiment_service import SentimentService
@@ -15,12 +16,15 @@ from ai_services.summarization_service import SummarizationService
 from meetings.models import (
     EmployeeMeetingInsight,
     Meeting,
+    MeetingInsight,
     MeetingParticipant,
     MeetingSpeakerMapping,
     MeetingTranscript,
 )
 
-_ALLOWED_EXTENSIONS = {'.mp3', '.wav', '.mp4'}
+logger = logging.getLogger(__name__)
+
+_ALLOWED_EXTENSIONS = {'.mp3', '.wav', '.mp4', '.m4a'}
 _ASR_PIPELINE = None
 _SENTIMENT_SERVICE = None
 _SUMMARY_SERVICE = None
@@ -29,11 +33,7 @@ _SUMMARY_SERVICE = None
 def _get_asr_pipeline():
     global _ASR_PIPELINE
     if _ASR_PIPELINE is None:
-        _ASR_PIPELINE = pipeline(
-            task='automatic-speech-recognition',
-            model='openai/whisper-tiny.en',
-            device=-1,
-        )
+        _ASR_PIPELINE = ModelManager.get_whisper_pipeline()
     return _ASR_PIPELINE
 
 
@@ -54,7 +54,7 @@ def _get_summary_service():
 def validate_media_extension(filename: str):
     _, ext = os.path.splitext(filename.lower())
     if ext not in _ALLOWED_EXTENSIONS:
-        raise ValueError('Unsupported format. Allowed: mp3, wav, mp4')
+        raise ValueError('Unsupported format. Allowed: mp3, wav, mp4, m4a')
 
 
 def _convert_to_wav(input_path: str) -> str:
@@ -77,11 +77,12 @@ def _convert_to_wav(input_path: str) -> str:
     return output_path
 
 
-def _to_mm_ss(seconds: float) -> str:
+def _to_hh_mm_ss(seconds: float) -> str:
     value = max(float(seconds), 0.0)
+    hours = int(value // 3600)
     mins = int(value // 60)
     secs = int(value % 60)
-    return f"{mins:02d}:{secs:02d}"
+    return f"{hours:02d}:{mins % 60:02d}:{secs:02d}"
 
 
 def _extract_timestamped_segments(asr_result):
@@ -113,7 +114,14 @@ def _extract_timestamped_segments(asr_result):
 
 def _asr_transcribe_with_timestamps(wav_path: str):
     asr = _get_asr_pipeline()
-    result = asr(wav_path, return_timestamps=True)
+    try:
+        result = asr(wav_path, return_timestamps=True)
+    except Exception:
+        # Retry once with a fresh pipeline instance.
+        global _ASR_PIPELINE
+        _ASR_PIPELINE = None
+        asr = _get_asr_pipeline()
+        result = asr(wav_path, return_timestamps=True)
     return _extract_timestamped_segments(result)
 
 
@@ -152,8 +160,13 @@ def transcribe_recording(uploaded_file):
                 f.write(chunk)
 
         temp_wav = _convert_to_wav(temp_input)
-        segments = _asr_transcribe_with_timestamps(temp_wav)
-        transcript = ' '.join(s['text'] for s in segments).strip()
+        try:
+            segments = _asr_transcribe_with_timestamps(temp_wav)
+            transcript = ' '.join(s['text'] for s in segments).strip()
+        except Exception as exc:
+            logger.exception('Whisper transcription failed for %s: %s', uploaded_file.name, exc)
+            segments = []
+            transcript = 'Transcription unavailable due to model/runtime error. Audio was received successfully.'
         return {
             'transcript': transcript,
             'segments': segments,
@@ -340,6 +353,99 @@ def _detect_signals(transcript: str):
     }
 
 
+def _extract_action_items(transcript: str):
+    candidates = [
+        line.strip()
+        for line in re.split(r'\n+|(?<=[.!?])\s+', transcript)
+        if line and len(line.strip()) > 16
+    ]
+    action_patterns = [
+        r'\b(action item|next step|follow up|should|need to|let us|we will)\b',
+    ]
+
+    action_items = []
+    for line in candidates:
+        lowered = line.lower()
+        if any(re.search(pattern, lowered) for pattern in action_patterns):
+            action_items.append(line)
+
+    deduped = []
+    seen = set()
+    for item in action_items:
+        key = item.lower()
+        if key not in seen:
+            seen.add(key)
+            deduped.append(item)
+    return deduped[:5]
+
+
+def _upsert_meeting_insights(meeting, summary, transcript, signals):
+    MeetingInsight.objects.filter(meeting=meeting).delete()
+
+    rows = [
+        MeetingInsight(
+            meeting=meeting,
+            insight_type=MeetingInsight.TYPE_SUMMARY,
+            description=summary or 'Summary unavailable.',
+            severity=MeetingInsight.SEVERITY_LOW,
+        )
+    ]
+
+    topic_tokens = []
+    for topic in (meeting.key_topics or []):
+        if isinstance(topic, dict):
+            value = topic.get('topic')
+            if value:
+                topic_tokens.append(str(value))
+        elif isinstance(topic, str):
+            topic_tokens.append(topic)
+    if topic_tokens:
+        rows.append(
+            MeetingInsight(
+                meeting=meeting,
+                insight_type=MeetingInsight.TYPE_TOPIC,
+                description='Key topics: ' + ', '.join(topic_tokens[:6]),
+                severity=MeetingInsight.SEVERITY_LOW,
+            )
+        )
+
+    for item in _extract_action_items(transcript):
+        rows.append(
+            MeetingInsight(
+                meeting=meeting,
+                insight_type=MeetingInsight.TYPE_ACTION_ITEM,
+                description=item,
+                severity=MeetingInsight.SEVERITY_MEDIUM,
+            )
+        )
+
+    conflict_level = signals.get('conflict_detection', {}).get('level', 'low')
+    if conflict_level in ('medium', 'high'):
+        severity = MeetingInsight.SEVERITY_HIGH if conflict_level == 'high' else MeetingInsight.SEVERITY_MEDIUM
+        rows.append(
+            MeetingInsight(
+                meeting=meeting,
+                insight_type=MeetingInsight.TYPE_RISK,
+                description=f"Conflict risk detected: {conflict_level}.",
+                severity=severity,
+            )
+        )
+
+    engagement_level = signals.get('engagement_signals', {}).get('level', 'low')
+    if engagement_level == 'low':
+        rows.append(
+            MeetingInsight(
+                meeting=meeting,
+                insight_type=MeetingInsight.TYPE_RISK,
+                description='Low engagement signals detected in the discussion.',
+                severity=MeetingInsight.SEVERITY_MEDIUM,
+            )
+        )
+
+    if rows:
+        MeetingInsight.objects.bulk_create(rows)
+
+
 def _sentiment_by_speaker(speaker_turns, transcript):
     sentiment_service = _get_sentiment_service()
 
@@ -423,6 +529,7 @@ def analyze_and_store_meeting(employees, transcript: str, date=None, speaker_tur
         speaker_mapping={'turns': speaker_turns, 'word_counts': participation['per_speaker']},
     )
 
+    _upsert_meeting_insights(meeting, summary, transcript, signals)
     _upsert_employee_insights(meeting, speaker_turns, sentiment_bundle, participation)
 
     return meeting, analysis
@@ -503,6 +610,19 @@ def run_meeting_intelligence_pipeline(meeting_id: int):
 
         diarized = _diarize_segments(segments, speaker_count=max(len(participant_ids), 1))
 
+        participants = list(meeting.participants.select_related('employee'))
+        unique_labels = sorted({item['speaker'] for item in diarized})
+        label_to_employee_id = {}
+        for idx, label in enumerate(unique_labels):
+            linked_employee = participants[idx].employee if idx < len(participants) else None
+            if linked_employee:
+                label_to_employee_id[label] = linked_employee.id
+            MeetingSpeakerMapping.objects.update_or_create(
+                meeting=meeting,
+                speaker_label=label,
+                defaults={'employee': linked_employee},
+            )
+
         MeetingTranscript.objects.filter(meeting=meeting).delete()
         transcript_rows = []
         for row in diarized:
@@ -510,6 +630,7 @@ def run_meeting_intelligence_pipeline(meeting_id: int):
                 MeetingTranscript(
                     meeting=meeting,
                     speaker=row['speaker'],
+                    speaker_employee_id=label_to_employee_id.get(row['speaker']),
                     text=row['text'],
                     start_time=row['start'],
                     end_time=row['end'],
@@ -519,23 +640,13 @@ def run_meeting_intelligence_pipeline(meeting_id: int):
             MeetingTranscript.objects.bulk_create(transcript_rows)
 
         meeting.transcript = '\n'.join(
-            f"[{_to_mm_ss(item['start'])}] {item['speaker']}: {item['text']}" for item in diarized
+            f"[{_to_hh_mm_ss(item['start'])}] {item['speaker']}: {item['text']}" for item in diarized
         )
 
         if meeting.meeting_date:
             meeting.date = meeting.meeting_date
         if not meeting.meeting_date:
             meeting.meeting_date = meeting.date
-
-        participants = list(meeting.participants.select_related('employee'))
-        unique_labels = sorted({item['speaker'] for item in diarized})
-        for idx, label in enumerate(unique_labels):
-            linked_employee = participants[idx].employee if idx < len(participants) else None
-            MeetingSpeakerMapping.objects.update_or_create(
-                meeting=meeting,
-                speaker_label=label,
-                defaults={'employee': linked_employee},
-            )
 
         employees = [p.employee for p in participants]
         if not employees and meeting.employee_id:
@@ -591,9 +702,11 @@ def run_meeting_intelligence_pipeline(meeting_id: int):
             },
         )
 
+        _upsert_meeting_insights(meeting, summary, meeting.transcript, signals)
         _upsert_employee_insights(meeting, speaker_turns, sentiment_bundle, participation)
         return meeting
-    except Exception:
+    except Exception as exc:
+        logger.exception('Meeting intelligence failed for meeting_id=%s: %s', meeting_id, exc)
         meeting.transcript_status = Meeting.TRANSCRIPT_STATUS_FAILED
         meeting.save(update_fields=['transcript_status', 'updated_at'])
-        raise
+        return meeting
