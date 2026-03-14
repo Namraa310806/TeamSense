@@ -167,7 +167,7 @@ export const fetchInsights = (employeeId) => api.get(`/employee-insights/${emplo
 
 // Attrition
 export const fetchAttrition = (employeeId) =>
-  api.get('/attrition/', { params: { employee_id: employeeId } });
+  api.get('/analytics/attrition/', { params: { employee_id: employeeId } });
 
 // AI Query
 export const aiQuery = (query, employeeId = null) =>

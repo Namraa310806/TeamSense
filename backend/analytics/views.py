@@ -185,8 +185,15 @@ def attrition_risk(request, employee_id):
     except Employee.DoesNotExist:
         return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
 
-    from ai_engine.attrition import calculate_attrition_risk
-    risk_data = calculate_attrition_risk(employee_id)
+    try:
+        from ai_engine.attrition import calculate_attrition_risk
+        risk_data = calculate_attrition_risk(employee_id)
+    except Exception:
+        risk_data = {
+            'risk_score': 0.0,
+            'risk_level': 'low',
+            'factors': ['Unable to compute attrition right now'],
+        }
 
     return Response({
         'employee_id': employee_id,
