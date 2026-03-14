@@ -76,14 +76,14 @@ function AIAssistant() {
       {/* Header */}
       <div className="animate-slide-up mb-4">
         <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-accent-violet to-primary-500 flex items-center justify-center">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-green-600 to-green-500 flex items-center justify-center shadow-md shadow-green-500/20">
             <Brain className="w-7 h-7 text-white" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-white">
+            <h1 className="text-2xl font-bold text-slate-800">
               AI <span className="gradient-text">Assistant</span>
             </h1>
-            <p className="text-sm text-slate-400">Ask anything about your team's meeting data</p>
+            <p className="text-sm text-slate-500">Ask anything about your team's meeting data</p>
           </div>
         </div>
       </div>
@@ -97,27 +97,29 @@ function AIAssistant() {
           >
             <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
               msg.role === 'ai'
-                ? 'bg-gradient-to-br from-accent-violet to-primary-500'
-                : 'bg-gradient-to-br from-primary-600 to-primary-400'
+                ? 'bg-gradient-to-br from-green-600 to-green-500'
+                : 'bg-gradient-to-br from-green-500 to-green-400'
             }`}>
               {msg.role === 'ai' ? <Sparkles className="w-4 h-4 text-white" /> : <User className="w-4 h-4 text-white" />}
             </div>
             <div className={`chat-bubble rounded-2xl px-5 py-3 ${
               msg.role === 'ai' ? 'chat-bubble-ai' : 'chat-bubble-user'
             }`}>
-              <p className="text-sm text-slate-200 leading-relaxed whitespace-pre-line">{msg.content}</p>
+              <p className={`text-sm leading-relaxed whitespace-pre-line ${msg.role === 'ai' ? 'text-slate-700' : 'text-white'}`}>
+                {msg.content}
+              </p>
             </div>
           </div>
         ))}
 
         {loading && (
           <div className="flex items-start gap-3 animate-fade-in">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-accent-violet to-primary-500 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-green-600 to-green-500 flex items-center justify-center">
               <Sparkles className="w-4 h-4 text-white" />
             </div>
             <div className="chat-bubble chat-bubble-ai rounded-2xl px-5 py-3">
-              <div className="flex items-center gap-2 text-sm text-slate-400">
-                <Loader2 className="w-4 h-4 animate-spin" />
+              <div className="flex items-center gap-2 text-sm text-slate-500">
+                <Loader2 className="w-4 h-4 animate-spin text-green-500" />
                 Analyzing meeting data...
               </div>
             </div>
@@ -134,7 +136,7 @@ function AIAssistant() {
             <button
               key={i}
               onClick={() => handleSend(s)}
-              className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl bg-surface-800/50 border border-surface-700 text-slate-400 hover:text-white hover:border-primary-500/30 transition-all"
+              className="flex items-center gap-1.5 text-xs px-3 py-2 rounded-xl bg-white border border-gray-200 text-slate-500 hover:text-slate-800 hover:border-green-300 hover:bg-green-50 transition-all"
             >
               <BookOpen className="w-3 h-3" />
               {s}
@@ -151,13 +153,13 @@ function AIAssistant() {
           onKeyDown={handleKeyDown}
           placeholder="Ask about your team..."
           rows={1}
-          className="flex-1 bg-transparent border-none text-white text-sm resize-none focus:outline-none placeholder-slate-500 max-h-32"
+          className="flex-1 bg-transparent border-none text-slate-800 text-sm resize-none focus:outline-none placeholder-gray-400 max-h-32"
           style={{ minHeight: '40px' }}
         />
         <button
           onClick={() => handleSend()}
           disabled={!input.trim() || loading}
-          className="w-10 h-10 rounded-xl bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white flex items-center justify-center disabled:opacity-50 transition-all shadow-lg shadow-primary-500/20"
+          className="w-10 h-10 rounded-xl bg-gradient-to-r from-green-600 to-green-500 hover:from-green-500 hover:to-green-400 text-white flex items-center justify-center disabled:opacity-50 transition-all shadow-lg shadow-green-500/20"
         >
           <Send className="w-4 h-4" />
         </button>

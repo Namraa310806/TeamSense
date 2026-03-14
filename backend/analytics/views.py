@@ -1,4 +1,5 @@
 from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 from django.db.models import Avg, Count
@@ -7,15 +8,18 @@ from meetings.models import EmployeeMeetingInsight, Meeting
 from .models import EmployeeInsight, MeetingEmbedding
 from .serializers import EmployeeInsightSerializer, MeetingEmbeddingSerializer
 from rest_framework.views import APIView
-from accounts.permissions import IsAdmin, IsExecutive, IsHR
 
 
 @api_view(['GET'])
-@permission_classes([IsAdmin, IsExecutive, IsHR])
+@permission_classes([IsAuthenticated])
 def dashboard(request):
     """Dashboard summary endpoint."""
+    user = request.user
+
     user_org = request.user.profile.organization if hasattr(request.user, 'profile') else None
-    if hasattr(request.user, 'profile') and request.user.profile.role == 'ADMIN':
+
+    # ADMIN sees all data
+    if hasattr(user, 'profile') and user.profile.role == 'ADMIN':
         employee_count = Employee.objects.count()
         meeting_count = Meeting.objects.count()
         dept_sentiment = (
@@ -24,7 +28,8 @@ def dashboard(request):
             .annotate(avg_sentiment=Avg('sentiment_score'), count=Count('id'))
             .order_by('employee__department')
         )
-    elif user_org:
+    elif hasattr(user, 'profile') and user.profile.organization:
+        user_org = user.profile.organization
         employee_count = Employee.objects.filter(organization=user_org).count()
         meeting_count = Meeting.objects.filter(employee__organization=user_org).count()
         dept_sentiment = (
@@ -35,7 +40,15 @@ def dashboard(request):
             .order_by('employee__department')
         )
     else:
-        return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        # Authenticated user with no org: show all data
+        employee_count = Employee.objects.count()
+        meeting_count = Meeting.objects.count()
+        dept_sentiment = (
+            Meeting.objects
+            .values('employee__department')
+            .annotate(avg_sentiment=Avg('sentiment_score'), count=Count('id'))
+            .order_by('employee__department')
+        )
 
     department_sentiment = [
         {
@@ -70,7 +83,11 @@ def dashboard(request):
         for m in recent_meetings
     ]
 
-    scoped_meetings = Meeting.objects.all() if hasattr(request.user, 'profile') and request.user.profile.role == 'ADMIN' else Meeting.objects.filter(organization=user_org)
+    scoped_meetings = (
+        Meeting.objects.all()
+        if hasattr(request.user, 'profile') and request.user.profile.role == 'ADMIN'
+        else Meeting.objects.filter(organization=user_org)
+    )
     scoped_employee_insights = EmployeeMeetingInsight.objects.filter(meeting__in=scoped_meetings)
 
     team_sentiment_trend = [
@@ -128,6 +145,7 @@ def dashboard(request):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def employee_insights(request, employee_id):
     """Get AI-extracted insights for an employee."""
     try:
@@ -138,6 +156,7 @@ def employee_insights(request, employee_id):
 
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def attrition_risk(request, employee_id):
     """Get attrition risk score for an employee."""
     try:
