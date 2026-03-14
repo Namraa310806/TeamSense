@@ -13,5 +13,11 @@ langchain-openai==1.1.11
 langchain-community==0.4.1
 python-dotenv==1.0.1
 gunicorn==21.2.0
+djangorestframework-simplejwt==5.3.1
 numpy==2.4.3
 scikit-learn==1.8.0
+sentence-transformers
+faiss-cpu
+transformers
+torch
+keybert
