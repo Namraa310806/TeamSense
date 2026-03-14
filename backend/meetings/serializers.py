@@ -2,6 +2,7 @@ from rest_framework import serializers
 from .models import (
     EmployeeMeetingInsight,
     Meeting,
+    MeetingInsight,
     MeetingSpeakerMapping,
     MeetingTranscript,
 )
@@ -46,9 +47,27 @@ class MeetingSerializer(serializers.ModelSerializer):
 
 
 class MeetingTranscriptSerializer(serializers.ModelSerializer):
+    speaker_employee_name = serializers.CharField(source='speaker_employee.name', read_only=True)
+
     class Meta:
         model = MeetingTranscript
-        fields = ['id', 'meeting', 'speaker', 'text', 'start_time', 'end_time', 'created_at']
+        fields = [
+            'id',
+            'meeting',
+            'speaker',
+            'speaker_employee',
+            'speaker_employee_name',
+            'text',
+            'start_time',
+            'end_time',
+            'created_at',
+        ]
+
+
+class MeetingInsightSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MeetingInsight
+        fields = ['id', 'meeting', 'insight_type', 'description', 'severity', 'created_at']
 
 
 class MeetingSpeakerMappingSerializer(serializers.ModelSerializer):
@@ -98,8 +117,8 @@ class MeetingUploadSerializer(serializers.Serializer):
 
         if attrs.get('meeting_file') is not None:
             filename = attrs['meeting_file'].name.lower()
-            if not (filename.endswith('.mp3') or filename.endswith('.wav') or filename.endswith('.mp4')):
-                raise serializers.ValidationError('meeting_file must be mp3, wav, or mp4.')
+            if not (filename.endswith('.mp3') or filename.endswith('.wav') or filename.endswith('.mp4') or filename.endswith('.m4a')):
+                raise serializers.ValidationError('meeting_file must be mp3, wav, mp4, or m4a.')
 
         return attrs
 

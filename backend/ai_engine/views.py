@@ -9,6 +9,8 @@ from employees.models import Employee
 from meetings.models import Meeting
 from analytics.models import EmployeeInsight
 
+SAFE_REFUSAL = "I am not supposed to answer this because relevant meeting content could not be extracted confidently."
+
 @api_view(['POST'])
 def ai_query(request):
     """RAG-based AI query endpoint.
@@ -56,9 +58,18 @@ def hr_assistant(request):
         # General context: last 5 meeting summaries
         for m in Meeting.objects.order_by('-date')[:5]:
             context_parts.append(f"Meeting summary: {m.summary}")
+
+    if len(context_parts) < 2:
+        return Response({'answer': SAFE_REFUSAL})
+
     context = '\n'.join(context_parts)
     assistant = AssistantService()
-    answer = assistant.ask(question, context=context)
+    grounded_question = (
+        f"{question}\n\n"
+        "Instruction: respond only from the provided context. "
+        f"If context is unrelated or weak, respond exactly with: {SAFE_REFUSAL}"
+    )
+    answer = assistant.ask(grounded_question, context=context)
     return Response({'answer': answer})
 
 # Example: 384 for all-MiniLM-L6-v2

@@ -1,11 +1,15 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Brain, LogOut, AudioLines } from 'lucide-react';
+import { LayoutDashboard, Users, Brain, LogOut, AudioLines, ShieldCheck } from 'lucide-react';
 
-const navItems = [
+const BASE_NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/employees', icon: Users, label: 'Employees' },
   { to: '/meeting-analysis', icon: AudioLines, label: 'Meeting Intelligence' },
   { to: '/ai-assistant', icon: Brain, label: 'AI Assistant' },
+];
+
+const CHR_NAV_ITEMS = [
+  { to: '/hr-management', icon: ShieldCheck, label: 'HR Management' },
 ];
 
 const ROLE_COLORS = {
@@ -31,6 +35,12 @@ function Sidebar() {
     ? user.name.split(' ').map((w) => w[0]).join('').slice(0, 2).toUpperCase()
     : '?';
   const roleColor = ROLE_COLORS[user?.role] || 'bg-gray-100 text-gray-600 border-gray-200';
+
+  // Build nav items: base items + CHR-only items when role matches
+  const navItems = [
+    ...BASE_NAV_ITEMS,
+    ...(user?.role === 'CHR' ? CHR_NAV_ITEMS : []),
+  ];
 
   const handleLogout = () => {
     localStorage.removeItem('user');
@@ -75,6 +85,15 @@ function Sidebar() {
             </li>
           ))}
         </ul>
+
+        {/* CHR section divider */}
+        {user?.role === 'CHR' && (
+          <div className="mt-6 pt-4 border-t border-gray-100">
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-widest px-4 mb-2">
+              CHR Admin
+            </p>
+          </div>
+        )}
       </nav>
 
       {/* User info + Logout */}

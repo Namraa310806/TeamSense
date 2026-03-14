@@ -20,6 +20,7 @@ class Organization(models.Model):
 class Profile(models.Model):
     ROLE_CHOICES = (
         ('ADMIN', 'Admin'),
+        ('EMPLOYEE', 'Employee'),
         ('EXECUTIVE', 'Executive'),
         ('HR', 'HR'),
         ('CHR', 'CHR'),
@@ -33,6 +34,20 @@ class Profile(models.Model):
 
     def __str__(self):
         return f"{self.user.username} - {self.role}"
+
+
+class HRUser(models.Model):
+    """HR users that are registered by CHR and allowed to log in."""
+    name = models.CharField(max_length=255)
+    email = models.EmailField(unique=True, db_index=True)
+    role = models.CharField(max_length=10, default='HR')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+
+    def __str__(self):
+        return f"{self.name} ({self.email})"
 
 
 # Signal to create profile on user creation

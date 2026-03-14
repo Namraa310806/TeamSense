@@ -174,6 +174,22 @@ def attrition_risk(request, employee_id):
     })
 
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def attrition_risk_lookup(request):
+    """GET /api/analytics/attrition/?employee_id=123"""
+    employee_id = request.query_params.get('employee_id')
+    if not employee_id:
+        return Response({'error': 'employee_id query parameter is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        employee_id_int = int(employee_id)
+    except (TypeError, ValueError):
+        return Response({'error': 'employee_id must be an integer'}, status=status.HTTP_400_BAD_REQUEST)
+
+    return attrition_risk(request, employee_id_int)
+
+
 class MeetingEmbeddingAPI(APIView):
     def get(self, request, meeting_id):
         """Get embedding for a meeting."""
