@@ -71,6 +71,13 @@ class MeetingParticipant(models.Model):
 class MeetingTranscript(models.Model):
     meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='transcript_segments')
     speaker = models.CharField(max_length=100)
+    speaker_employee = models.ForeignKey(
+        Employee,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='spoken_transcript_segments',
+    )
     text = models.TextField()
     start_time = models.FloatField(default=0.0)
     end_time = models.FloatField(default=0.0)
@@ -81,6 +88,40 @@ class MeetingTranscript(models.Model):
 
     def __str__(self):
         return f"{self.speaker} ({self.start_time:.2f}-{self.end_time:.2f})"
+
+
+class MeetingInsight(models.Model):
+    TYPE_SUMMARY = 'SUMMARY'
+    TYPE_ACTION_ITEM = 'ACTION_ITEM'
+    TYPE_TOPIC = 'TOPIC'
+    TYPE_RISK = 'RISK'
+    TYPE_CHOICES = [
+        (TYPE_SUMMARY, 'Summary'),
+        (TYPE_ACTION_ITEM, 'Action Item'),
+        (TYPE_TOPIC, 'Topic'),
+        (TYPE_RISK, 'Risk'),
+    ]
+
+    SEVERITY_LOW = 'LOW'
+    SEVERITY_MEDIUM = 'MEDIUM'
+    SEVERITY_HIGH = 'HIGH'
+    SEVERITY_CHOICES = [
+        (SEVERITY_LOW, 'Low'),
+        (SEVERITY_MEDIUM, 'Medium'),
+        (SEVERITY_HIGH, 'High'),
+    ]
+
+    meeting = models.ForeignKey(Meeting, on_delete=models.CASCADE, related_name='insights')
+    insight_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
+    description = models.TextField()
+    severity = models.CharField(max_length=10, choices=SEVERITY_CHOICES, default=SEVERITY_LOW)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', 'id']
+
+    def __str__(self):
+        return f"{self.insight_type} insight for meeting {self.meeting_id}"
 
 
 class MeetingSpeakerMapping(models.Model):

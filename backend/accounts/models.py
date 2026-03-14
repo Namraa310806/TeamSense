@@ -20,6 +20,7 @@ class Organization(models.Model):
 class Profile(models.Model):
     ROLE_CHOICES = (
         ('ADMIN', 'Admin'),
+        ('EMPLOYEE', 'Employee'),
         ('EXECUTIVE', 'Executive'),
         ('HR', 'HR'),
         ('CHR', 'CHR'),

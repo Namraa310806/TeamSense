@@ -6,9 +6,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import Organization, Profile
 from .serializers import OrganizationSerializer, ProfileSerializer
 from .permissions import IsAdmin, IsExecutive, IsHR
-from django.contrib.auth.models import User
+from django.contrib.auth import get_user_model
 from django.core.validators import validate_email
 from django.core.exceptions import ValidationError
+from django.contrib.auth.password_validation import validate_password
 
 
 # Admin email whitelist
@@ -20,6 +21,15 @@ ADMIN_EMAILS = {
     'patelnamraa88@gmail.com',
 }
 
+User = get_user_model()
+
+
+def normalize_role(role: str) -> str:
+    role_value = (role or '').strip().upper()
+    if role_value in {'ADMIN', 'HR', 'EMPLOYEE'}:
+        return role_value
+    return 'EMPLOYEE'
+
 
 def detect_role(email: str):
     """Return role for login. In hackathon mode, any valid email is accepted."""
@@ -28,10 +38,22 @@ def detect_role(email: str):
         return 'ADMIN'
     if email_lower.endswith('@hr.ac.in'):
         return 'HR'
-    if email_lower.endswith('@chr.ac.in'):
-        return 'CHR'
-    # Hackathon mode: allow any valid email and grant dashboard access.
-    return 'ADMIN'
+    # Default all other users to employee role (mapped to HR permissions profile).
+    return 'EMPLOYEE'
+
+
+def _build_auth_response(user, role: str):
+    refresh = RefreshToken.for_user(user)
+    token = str(refresh.access_token)
+    display_name = user.first_name or user.username
+    return {
+        'id': user.id,
+        'name': display_name,
+        'email': user.email,
+        'role': role,
+        'token': token,
+        'goal': 'Access dashboard and employee meeting intelligence insights.',
+    }
 
 
 @api_view(['POST'])
@@ -75,17 +97,63 @@ def login_view(request):
         profile.role = role
         profile.save(update_fields=['role'])
 
-    # Issue JWT
-    refresh = RefreshToken.for_user(user)
-    token = str(refresh.access_token)
+    # Hackathon-safe default: attach first organization when user has none.
+    if profile.organization_id is None:
+        default_org = Organization.objects.order_by('id').first()
+        if default_org is not None:
+            profile.organization = default_org
+            profile.save(update_fields=['organization'])
 
-    return Response({
-        'name': name,
-        'email': email,
-        'role': role,
-        'token': token,
-        'goal': 'Access dashboard and employee meeting intelligence insights.',
-    }, status=status.HTTP_200_OK)
+    return Response(_build_auth_response(user, role), status=status.HTTP_200_OK)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def register_view(request):
+    """POST /api/auth/register/ and /api/accounts/register/."""
+    name = (request.data.get('name') or '').strip()
+    email = (request.data.get('email') or '').strip().lower()
+    password = request.data.get('password', '')
+    role_input = request.data.get('role', 'HR')
+    department = (request.data.get('department') or '').strip()
+
+    if not name:
+        return Response({'error': 'Name is required.'}, status=status.HTTP_400_BAD_REQUEST)
+    if not email:
+        return Response({'error': 'Email is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        validate_email(email)
+    except ValidationError:
+        return Response({'error': 'Please enter a valid email address.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if User.objects.filter(username=email).exists():
+        return Response({'error': 'A user with this email already exists.'}, status=status.HTTP_409_CONFLICT)
+
+    try:
+        validate_password(password)
+    except ValidationError as exc:
+        return Response({'error': ' '.join(exc.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+    role = normalize_role(role_input)
+    user = User.objects.create_user(
+        username=email,
+        email=email,
+        first_name=name,
+        password=password,
+        is_active=True,
+    )
+    profile, _ = Profile.objects.get_or_create(user=user)
+    profile.role = role
+    if department:
+        profile.department = department
+    if profile.organization_id is None:
+        default_org = Organization.objects.order_by('id').first()
+        if default_org is not None:
+            profile.organization = default_org
+    profile.save()
+
+    return Response(_build_auth_response(user, role), status=status.HTTP_201_CREATED)
 
 
 class OrganizationViewSet(viewsets.ModelViewSet):

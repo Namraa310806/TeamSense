@@ -7,13 +7,37 @@ import MeetingInsights from './pages/MeetingInsights';
 import AIAssistant from './pages/AIAssistant';
 import Login from './pages/Login';
 import MeetingAnalysis from './pages/MeetingAnalysis';
+import Register from './pages/Register';
+
+function isLikelyJwt(token) {
+  return typeof token === 'string' && token.split('.').length === 3;
+}
+
+function isJwtExpired(token) {
+  try {
+    const payloadBase64 = token.split('.')[1];
+    const payloadJson = atob(payloadBase64.replace(/-/g, '+').replace(/_/g, '/'));
+    const payload = JSON.parse(payloadJson);
+    if (!payload.exp) return false;
+    return Date.now() >= Number(payload.exp) * 1000;
+  } catch {
+    return true;
+  }
+}
 
 /** Returns true when the user has a valid session stored in localStorage. */
 function isAuthenticated() {
   try {
     const user = localStorage.getItem('user');
     const token = localStorage.getItem('access_token');
-    return !!(user && token);
+    if (!user || !token) return false;
+    if (!isLikelyJwt(token)) return false;
+    if (isJwtExpired(token)) {
+      localStorage.removeItem('user');
+      localStorage.removeItem('access_token');
+      return false;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -45,6 +69,7 @@ function App() {
       <Routes>
         {/* Public route – full screen, no sidebar */}
         <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
 
         {/* Protected routes – require authentication, rendered inside AppLayout */}
         <Route

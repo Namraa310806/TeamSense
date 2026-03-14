@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, User, Briefcase, Calendar, Mail, TrendingUp, AlertTriangle, MessageSquare, Brain, Target, AlertCircle } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from 'recharts';
-import { fetchEmployee, fetchAttrition, uploadMeeting } from '../services/api';
+import { fetchEmployee, fetchAttrition, fetchEmployeeMeetingInsights, uploadMeeting } from '../services/api';
 
 function EmployeeProfile() {
   const { id } = useParams();
@@ -12,18 +12,21 @@ function EmployeeProfile() {
   const [showUpload, setShowUpload] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [meetingIntelligence, setMeetingIntelligence] = useState(null);
 
   useEffect(() => {
     Promise.all([
       fetchEmployee(id).then((r) => r.data).catch(() => null),
       fetchAttrition(id).then((r) => r.data).catch(() => null),
-    ]).then(([empData, attrData]) => {
+      fetchEmployeeMeetingInsights(id).then((r) => r.data).catch(() => null),
+    ]).then(([empData, attrData, meetingIntel]) => {
       setEmployee(empData || {
         id, name: 'Employee', role: 'Role', department: 'Department',
         join_date: '2024-01-15', manager: 'Manager', email: 'employee@teamsense.ai',
         meetings: [], insights: null, meeting_count: 0, avg_sentiment: 0.65,
       });
       setAttrition(attrData || { risk_score: 0.3, risk_level: 'low', factors: ['No data'] });
+      setMeetingIntelligence(meetingIntel);
       setLoading(false);
     });
   }, [id]);
@@ -219,6 +222,51 @@ function EmployeeProfile() {
           </div>
         </div>
       )}
+
+      {/* AI Meeting Insights */}
+      <div className="glass-card p-6 animate-fade-in">
+        <h2 className="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+          <Brain className="w-5 h-5 text-cyan-500" />
+          AI Meeting Insights
+        </h2>
+
+        {!meetingIntelligence && (
+          <p className="text-slate-500 text-sm">No employee-level meeting intelligence available yet.</p>
+        )}
+
+        {meetingIntelligence && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="bg-white border border-gray-200 rounded-xl p-3">
+                <p className="text-xs text-slate-500">Meetings Analyzed</p>
+                <p className="text-lg font-semibold text-slate-800 mt-1">{meetingIntelligence.meeting_count || 0}</p>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl p-3">
+                <p className="text-xs text-slate-500">Engagement</p>
+                <p className="text-lg font-semibold text-green-600 mt-1">{Math.round((meetingIntelligence.engagement_score || 0) * 100)}%</p>
+              </div>
+              <div className="bg-white border border-gray-200 rounded-xl p-3">
+                <p className="text-xs text-slate-500">Latest Sentiment</p>
+                <p className="text-lg font-semibold text-slate-800 mt-1">{meetingIntelligence.latest_analysis?.employee_sentiment_scores?.overall?.label || 'N/A'}</p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {(meetingIntelligence.insights || []).slice(0, 6).map((entry) => (
+                <div key={entry.id} className="bg-gray-50 border border-gray-200 rounded-xl p-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">Meeting #{entry.meeting}</p>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Sentiment: {entry.sentiment_score?.toFixed?.(2) || entry.sentiment_score} • Turns: {entry.speaking_turns}
+                    </p>
+                  </div>
+                  <p className="text-sm font-semibold text-cyan-600">Engagement {(Number(entry.engagement_score || 0) * 100).toFixed(0)}%</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Meeting Timeline */}
       <div className="glass-card p-6 animate-fade-in">
