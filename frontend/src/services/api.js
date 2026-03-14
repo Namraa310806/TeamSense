@@ -107,4 +107,9 @@ export const fetchAttrition = (employeeId) =>
 export const aiQuery = (query, employeeId = null) =>
   api.post('/ai/query/', { query, employee_id: employeeId });
 
+// HR User Management (CHR only)
+export const fetchHRUsers = () => api.get('/accounts/hr-users/');
+export const addHRUser = (data) => api.post('/accounts/hr-users/', data);
+export const deleteHRUser = (id) => api.delete(`/accounts/hr-users/${id}/`);
+
 export default api;
