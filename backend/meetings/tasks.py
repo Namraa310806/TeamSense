@@ -41,3 +41,13 @@ def update_insights_task(employee_id):
     logger.info(f"Updating insights for employee {employee_id}")
     from ai_engine.topics import update_employee_insights
     update_employee_insights(employee_id)
+
+
+@shared_task(name='meetings.update_attrition')
+def update_attrition_task(employee_id):
+    """Recalculate attrition risk for employee after sentiment update."""
+    logger.info(f"Updating attrition risk for employee {employee_id}")
+    from ai_engine.attrition import calculate_attrition_risk
+    # Optional: Cache result in EmployeeInsight or log
+    risk_data = calculate_attrition_risk(employee_id)
+    logger.info(f"Attrition risk updated: {risk_data}")

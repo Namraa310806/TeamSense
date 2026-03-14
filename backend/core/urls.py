@@ -5,4 +5,5 @@ urlpatterns = [
     path('meetings/', include('meetings.urls')),
     path('', include('analytics.urls')),
     path('ai/', include('ai_engine.urls')),
+    path('accounts/', include('accounts.urls')),
 ]
