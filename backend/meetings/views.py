@@ -1,15 +1,28 @@
 from rest_framework import status
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.utils import timezone
 from .models import Meeting
 from .serializers import MeetingSerializer, MeetingUploadSerializer
 from employees.models import Employee
+from accounts.permissions import IsAdmin, IsExecutive, IsHR, IsSameOrganization
 
 
 @api_view(['POST'])
+@permission_classes([IsExecutive, IsHR])
 def upload_meeting(request):
     """Upload a meeting transcript and trigger AI pipeline."""
+    # Only allow upload for employees in user's organization
+    user_org = request.user.profile.organization if hasattr(request.user, 'profile') else None
+    employee_id = request.data.get('employee_id')
+    if employee_id:
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            if user_org and employee.organization != user_org:
+                return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        except Employee.DoesNotExist:
+            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+
     serializer = MeetingUploadSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -46,9 +59,19 @@ def upload_meeting(request):
 
 
 @api_view(['GET'])
+@permission_classes([IsAdmin, IsExecutive, IsHR])
 def meeting_list(request):
     """List all meetings, optionally filtered by employee_id."""
+    user_org = request.user.profile.organization if hasattr(request.user, 'profile') else None
     employee_id = request.query_params.get('employee_id')
+    if employee_id:
+        try:
+            employee = Employee.objects.get(id=employee_id)
+            if user_org and employee.organization != user_org:
+                return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+        except Employee.DoesNotExist:
+            return Response({'error': 'Employee not found'}, status=status.HTTP_404_NOT_FOUND)
+
     meetings = Meeting.objects.all()
     if employee_id:
         meetings = meetings.filter(employee_id=employee_id)
