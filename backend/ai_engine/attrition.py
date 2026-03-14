@@ -3,7 +3,6 @@ import logging
 import os
 import numpy as np
 import pandas as pd
-from catboost import CatBoostClassifier
 from sklearn.model_selection import train_test_split
 from django.utils import timezone
 
@@ -13,6 +12,12 @@ MODEL_PATH = 'models/attrition_model.cbm'
 
 def load_or_train_model():
     """Load CatBoost model or train/save new one."""
+    try:
+        from catboost import CatBoostClassifier
+    except Exception as exc:
+        logger.warning("CatBoost unavailable, using heuristic attrition fallback: %s", exc)
+        return None
+
     model_path = os.path.join(os.path.dirname(__file__), MODEL_PATH)
     
     if os.path.exists(model_path):
@@ -65,7 +70,7 @@ def calculate_attrition_risk(employee_id: int) -> dict:
     except Employee.DoesNotExist:
         return {'risk_score': 0.0, 'risk_level': 'unknown', 'factors': []}
 
-    meetings = Meeting.objects.filter(employee=employee).order_by('-date')
+    meetings = Meeting.objects.filter(employee=employee).order_by('-date', '-meeting_date', '-id')
     if not meetings.exists():
         return {
             'risk_score': 0.0,
@@ -73,7 +78,11 @@ def calculate_attrition_risk(employee_id: int) -> dict:
             'factors': ['No meeting data available'],
         }
 
-    model = load_or_train_model()
+    try:
+        model = load_or_train_model()
+    except Exception as exc:
+        logger.exception('Attrition model unavailable: %s', exc)
+        model = None
     
     # Features
     sentiment_scores = [m.sentiment_score for m in meetings if m.sentiment_score is not None]
@@ -87,10 +96,20 @@ def calculate_attrition_risk(employee_id: int) -> dict:
         sentiment_decline = max(0, older_avg - recent_avg)
     
     concern_keywords = ['concern', 'frustrated', 'unhappy', 'leaving', 'quit', 'resign', 'burnout', 'overwhelmed', 'undervalued', 'unfair']
-    concern_count = sum(1 for m in meetings for kw in concern_keywords if kw in m.transcript.lower())
+    concern_count = 0
+    for meeting in meetings:
+        transcript_text = (meeting.transcript or '').lower()
+        if not transcript_text:
+            continue
+        for keyword in concern_keywords:
+            if keyword in transcript_text:
+                concern_count += 1
     
     last_meeting = meetings.first()
-    days_since_last = (timezone.now().date() - last_meeting.date).days if last_meeting else 0
+    last_meeting_date = None
+    if last_meeting:
+        last_meeting_date = last_meeting.date or getattr(last_meeting, 'meeting_date', None)
+    days_since_last = (timezone.now().date() - last_meeting_date).days if last_meeting_date else 0
     
     burnout_risk = 0.0
     try:
@@ -101,9 +120,20 @@ def calculate_attrition_risk(employee_id: int) -> dict:
     
     meeting_count = len(meetings)
     
-    features = np.array([[avg_sentiment, sentiment_decline, concern_count, days_since_last, burnout_risk, meeting_count]])
-    risk_score = model.predict_proba(features)[0][1]
-    risk_score = round(float(risk_score), 3)
+    if model is None:
+        # Weighted fallback for environments without CatBoost.
+        risk_score = (
+            (1.0 - max(min(avg_sentiment, 1.0), 0.0)) * 0.35
+            + max(min(sentiment_decline, 1.0), 0.0) * 0.2
+            + min(concern_count / 10.0, 1.0) * 0.2
+            + min(days_since_last / 180.0, 1.0) * 0.1
+            + max(min(burnout_risk, 1.0), 0.0) * 0.15
+        )
+        risk_score = round(float(max(0.0, min(1.0, risk_score))), 3)
+    else:
+        features = np.array([[avg_sentiment, sentiment_decline, concern_count, days_since_last, burnout_risk, meeting_count]])
+        risk_score = model.predict_proba(features)[0][1]
+        risk_score = round(float(risk_score), 3)
     
     if risk_score >= 0.7:
         risk_level = 'critical'

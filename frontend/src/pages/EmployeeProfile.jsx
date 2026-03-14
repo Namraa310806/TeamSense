@@ -11,7 +11,9 @@ function EmployeeProfile() {
   const [loading, setLoading] = useState(true);
   const [showUpload, setShowUpload] = useState(false);
   const [transcript, setTranscript] = useState('');
+  const [meetingFile, setMeetingFile] = useState(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const [meetingIntelligence, setMeetingIntelligence] = useState(null);
 
   useEffect(() => {
@@ -32,22 +34,61 @@ function EmployeeProfile() {
   }, [id]);
 
   const handleUpload = async () => {
-    if (!transcript.trim()) return;
+    if (!transcript.trim() && !meetingFile) return;
     setUploading(true);
+    setUploadError('');
+
     try {
-      await uploadMeeting({ employee_id: parseInt(id), transcript });
+      const formData = new FormData();
+      formData.append('participants', JSON.stringify([parseInt(id, 10)]));
+      if (transcript.trim()) {
+        formData.append('transcript', transcript.trim());
+      }
+      if (meetingFile) {
+        formData.append('meeting_file', meetingFile);
+      }
+
+      const uploadRes = await uploadMeeting(formData);
+      const createdMeeting = uploadRes?.data?.meeting;
+
+      if (createdMeeting) {
+        setEmployee((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            meetings: [createdMeeting, ...(prev.meetings || [])],
+          };
+        });
+      }
+
       setTranscript('');
+      setMeetingFile(null);
       setShowUpload(false);
-      // Reload both data
-      const [empRes, attrRes] = await Promise.all([
-        fetchEmployee(id),
-        fetchAttrition(id)
+      const [empRes, attrRes, meetingIntelRes] = await Promise.all([
+        fetchEmployee(id).catch(() => null),
+        fetchAttrition(id).catch(() => null),
+        fetchEmployeeMeetingInsights(id).catch(() => null),
       ]);
-      setEmployee(empRes.data);
-      setAttrition(attrRes.data);
+
+      if (empRes?.data) {
+        setEmployee(empRes.data);
+      }
+      if (attrRes?.data) {
+        setAttrition(attrRes.data);
+      }
+      setMeetingIntelligence(meetingIntelRes?.data || null);
     } catch (err) {
       console.error('Upload failed:', err);
+      const apiError = err?.response?.data?.error;
+      if (typeof apiError === 'string') {
+        setUploadError(apiError);
+      } else if (apiError && typeof apiError === 'object') {
+        setUploadError(Object.entries(apiError).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`).join(' | '));
+      } else {
+        setUploadError('Upload failed. Please provide transcript text or a valid audio/video file.');
+      }
     }
+
     setUploading(false);
   };
 
@@ -114,22 +155,36 @@ function EmployeeProfile() {
       {/* Upload form */}
       {showUpload && (
         <div className="glass-card p-6 animate-slide-up">
-          <h3 className="text-slate-800 font-semibold mb-3">Upload Meeting Transcript</h3>
+          <h3 className="text-slate-800 font-semibold mb-3">Upload Meeting Transcript or Recording</h3>
           <textarea
             value={transcript}
             onChange={(e) => setTranscript(e.target.value)}
             placeholder="Paste the meeting transcript here..."
             className="w-full h-40 bg-white border border-gray-200 rounded-xl p-4 text-slate-800 text-sm resize-none focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20 transition-colors placeholder-gray-400"
           />
+          <div className="mt-3">
+            <input
+              type="file"
+              accept=".mp3,.wav,.mp4,.m4a,audio/*,video/*"
+              onChange={(e) => setMeetingFile(e.target.files?.[0] || null)}
+              className="w-full bg-white border border-gray-200 rounded-xl p-3 text-slate-700 text-sm focus:border-green-500 focus:outline-none focus:ring-2 focus:ring-green-500/20"
+            />
+            <p className="text-xs text-slate-400 mt-1">Optional recording formats: mp3, wav, mp4, m4a.</p>
+          </div>
+          {uploadError && (
+            <div className="mt-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+              {uploadError}
+            </div>
+          )}
           <div className="flex gap-3 mt-3">
             <button
               onClick={handleUpload}
-              disabled={uploading || !transcript.trim()}
+              disabled={uploading || (!transcript.trim() && !meetingFile)}
               className="px-6 py-2.5 bg-green-600 hover:bg-green-500 text-white rounded-xl text-sm font-medium disabled:opacity-50 transition-colors shadow-sm shadow-green-500/20"
             >
               {uploading ? 'Processing...' : 'Upload & Analyze'}
             </button>
-            <button onClick={() => setShowUpload(false)} className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-slate-600 rounded-xl text-sm transition-colors">
+            <button onClick={() => { setShowUpload(false); setUploadError(''); }} className="px-6 py-2.5 bg-gray-100 hover:bg-gray-200 text-slate-600 rounded-xl text-sm transition-colors">
               Cancel
             </button>
           </div>

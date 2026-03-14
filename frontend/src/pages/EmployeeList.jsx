@@ -37,13 +37,14 @@ function EmployeeList() {
     setFormSuccess('');
 
     try {
-      await createEmployee(newEmployee);
+      const res = await createEmployee(newEmployee);
+      const created = res.data;
+      setEmployees((prev) => [created, ...prev]);
       setFormSuccess('Employee added successfully!');
       setTimeout(() => {
         setShowAdd(false);
         setFormSuccess('');
         setNewEmployee({ name: '', role: '', department: '', email: '', manager: '', join_date: '' });
-        loadEmployees();
       }, 1200);
     } catch (err) {
       const data = err.response?.data;

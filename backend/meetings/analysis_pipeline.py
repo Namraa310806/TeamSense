@@ -11,9 +11,6 @@ from django.utils import timezone
 from ai_engine.model_loader import ModelManager
 
 from analytics.models import MeetingAnalysis
-from ai_services.emotion_service import EmotionService
-from ai_services.sentiment_service import SentimentService
-from ai_services.summarization_service import SummarizationService
 from meetings.models import (
     EmployeeMeetingInsight,
     Meeting,
@@ -30,6 +27,115 @@ _ASR_PIPELINE = None
 _SENTIMENT_SERVICE = None
 _SUMMARY_SERVICE = None
 _EMOTION_SERVICE = None
+USE_RULE_BASED_ANALYSIS = os.getenv('MEETING_ANALYSIS_MODE', 'rule').lower() != 'ai'
+
+
+class RuleBasedSentimentService:
+    POSITIVE_WORDS = {
+        'good', 'great', 'excellent', 'happy', 'clear', 'aligned', 'progress',
+        'improve', 'improved', 'success', 'successful', 'win', 'resolved', 'thanks', 'confident',
+    }
+    NEGATIVE_WORDS = {
+        'bad', 'issue', 'problem', 'delay', 'blocked', 'risk', 'concern', 'confused',
+        'angry', 'frustrated', 'fail', 'failed', 'urgent', 'overwhelmed', 'stuck',
+    }
+
+    def analyze(self, text):
+        content = (text or '').strip().lower()
+        if not content:
+            return {'label': 'neutral', 'scores': {'negative': 0.0, 'positive': 0.0, 'neutral': 1.0}}
+
+        words = re.findall(r"\b[a-z']+\b", content)
+        if not words:
+            return {'label': 'neutral', 'scores': {'negative': 0.0, 'positive': 0.0, 'neutral': 1.0}}
+
+        positive_hits = sum(1 for word in words if word in self.POSITIVE_WORDS)
+        negative_hits = sum(1 for word in words if word in self.NEGATIVE_WORDS)
+        total_hits = positive_hits + negative_hits
+
+        if total_hits == 0:
+            scores = {'negative': 0.25, 'positive': 0.25, 'neutral': 0.5}
+            return {'label': 'neutral', 'scores': scores}
+
+        positive = positive_hits / total_hits
+        negative = negative_hits / total_hits
+        neutral = max(0.0, 1.0 - positive - negative)
+        label = 'positive' if positive >= negative and positive >= neutral else ('negative' if negative >= neutral else 'neutral')
+        return {
+            'label': label,
+            'scores': {
+                'negative': round(float(negative), 4),
+                'positive': round(float(positive), 4),
+                'neutral': round(float(neutral), 4),
+            },
+        }
+
+
+class RuleBasedSummarizationService:
+    def summarize(self, text, min_length=30, max_length=130):
+        content = (text or '').strip()
+        if not content:
+            return ''
+
+        sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', content) if len(s.strip()) > 20]
+        if not sentences:
+            return content[:max_length]
+
+        key_sentences = []
+        for sentence in sentences:
+            lowered = sentence.lower()
+            if any(token in lowered for token in ('action', 'next step', 'deadline', 'decide', 'decision', 'blocker', 'risk')):
+                key_sentences.append(sentence)
+            if len(key_sentences) >= 3:
+                break
+
+        if not key_sentences:
+            key_sentences = sentences[:2]
+
+        summary = ' '.join(key_sentences)
+        return summary[:max_length * 4].strip()
+
+
+class RuleBasedEmotionService:
+    def analyze(self, text):
+        content = (text or '').lower()
+        if not content:
+            return {'neutral': 1.0}
+
+        score_map = {
+            'joy': 0,
+            'anger': 0,
+            'fear': 0,
+            'sadness': 0,
+            'neutral': 1,
+        }
+        for token in ('great', 'nice', 'thanks', 'good', 'happy', 'awesome'):
+            if token in content:
+                score_map['joy'] += 1
+        for token in ('angry', 'frustrated', 'annoyed'):
+            if token in content:
+                score_map['anger'] += 1
+        for token in ('risk', 'fear', 'worry', 'uncertain'):
+            if token in content:
+                score_map['fear'] += 1
+        for token in ('sad', 'unhappy', 'down'):
+            if token in content:
+                score_map['sadness'] += 1
+
+        total = float(sum(score_map.values()) or 1.0)
+        return {label: round(value / total, 4) for label, value in score_map.items() if value > 0}
+
+    def aggregate(self, texts):
+        bucket = defaultdict(float)
+        count = 0
+        for text in texts:
+            result = self.analyze(text)
+            for label, score in result.items():
+                bucket[label] += float(score)
+            count += 1
+        if count == 0:
+            return {'neutral': 1.0}
+        return {k: round(v / count, 4) for k, v in bucket.items()}
 
 
 def _get_asr_pipeline():
@@ -42,21 +148,33 @@ def _get_asr_pipeline():
 def _get_sentiment_service():
     global _SENTIMENT_SERVICE
     if _SENTIMENT_SERVICE is None:
-        _SENTIMENT_SERVICE = SentimentService()
+        if USE_RULE_BASED_ANALYSIS:
+            _SENTIMENT_SERVICE = RuleBasedSentimentService()
+        else:
+            from ai_services.sentiment_service import SentimentService
+            _SENTIMENT_SERVICE = SentimentService()
     return _SENTIMENT_SERVICE
 
 
 def _get_summary_service():
     global _SUMMARY_SERVICE
     if _SUMMARY_SERVICE is None:
-        _SUMMARY_SERVICE = SummarizationService()
+        if USE_RULE_BASED_ANALYSIS:
+            _SUMMARY_SERVICE = RuleBasedSummarizationService()
+        else:
+            from ai_services.summarization_service import SummarizationService
+            _SUMMARY_SERVICE = SummarizationService()
     return _SUMMARY_SERVICE
 
 
 def _get_emotion_service():
     global _EMOTION_SERVICE
     if _EMOTION_SERVICE is None:
-        _EMOTION_SERVICE = EmotionService()
+        if USE_RULE_BASED_ANALYSIS:
+            _EMOTION_SERVICE = RuleBasedEmotionService()
+        else:
+            from ai_services.emotion_service import EmotionService
+            _EMOTION_SERVICE = EmotionService()
     return _EMOTION_SERVICE
 
 

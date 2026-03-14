@@ -10,6 +10,8 @@ import Login from './pages/Login';
 import MeetingAnalysis from './pages/MeetingAnalysis';
 import Register from './pages/Register';
 import HRManagement from './pages/HRManagement';
+import AIAssistantWidget from './components/AIAssistantWidget';
+import GlobalToast from './components/GlobalToast';
 
 function isLikelyJwt(token) {
   return typeof token === 'string' && token.split('.').length === 3;
@@ -79,6 +81,8 @@ function AppLayout({ children }) {
       <main className="flex-1 ml-64 p-8 overflow-auto bg-green-50">
         {children}
       </main>
+      <AIAssistantWidget />
+      <GlobalToast />
     </div>
   );
 }

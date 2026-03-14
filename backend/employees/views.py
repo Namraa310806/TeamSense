@@ -42,6 +42,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
             return EmployeeListSerializer
         return EmployeeSerializer
 
+    def perform_create(self, serializer):
+        user = self.request.user
+        payload_org = serializer.validated_data.get('organization')
+        user_org = user.profile.organization if hasattr(user, 'profile') else None
+
+        if payload_org is None and user_org is not None:
+            serializer.save(organization=user_org)
+            return
+
+        serializer.save()
+
     def retrieve(self, request, *args, **kwargs):
         employee = self.get_object()
         serializer = EmployeeSerializer(employee)
@@ -83,7 +94,17 @@ class EmployeeViewSet(viewsets.ModelViewSet):
         )
 
         if not insights.exists():
-            return Response({'error': 'No meeting analyses found for this employee'}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {
+                    'employee_id': employee.id,
+                    'meeting_count': 0,
+                    'engagement_score': 0.0,
+                    'sentiment_trend': [],
+                    'participation_frequency': [],
+                    'insights': [],
+                    'latest_analysis': None,
+                }
+            )
 
         latest_meeting = insights.first().meeting
         latest_analysis = MeetingAnalysis.objects.filter(meeting=latest_meeting).first()

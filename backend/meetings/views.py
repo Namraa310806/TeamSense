@@ -382,7 +382,16 @@ def employee_meeting_insights(request, employee_id):
 
     insights = EmployeeMeetingInsight.objects.filter(employee_id=employee_id).select_related('meeting').order_by('-meeting__meeting_date', '-id')
     if not insights.exists():
-        return Response({'error': 'No meeting analyses found for this employee'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(
+            {
+                'employee_id': employee_id,
+                'meeting_count': 0,
+                'engagement_score': 0.0,
+                'sentiment_trend': [],
+                'participation_frequency': [],
+                'latest_analysis': None,
+            }
+        )
 
     avg_engagement = insights.aggregate(avg=Avg('engagement_score')).get('avg') or 0.0
 
