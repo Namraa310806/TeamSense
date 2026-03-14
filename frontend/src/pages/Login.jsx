@@ -1,9 +1,14 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Brain, Mail, Lock, User, AlertCircle, ArrowRight } from 'lucide-react';
 
-const DEMO_AUTH_ONLY = true;
+const DEMO_AUTH_ONLY = false;
+const DEMO_CREDENTIALS = [
+  { label: 'HR Demo', name: 'Riya Shah', email: 'riya@hr.ac.in', password: 'Pass@1234' },
+  { label: 'Employee Demo', name: 'Aarav Mehta', email: 'aarav@novatech.com', password: 'Pass@1234' },
+  { label: 'Admin Demo', name: 'Admin User', email: 'rutvigsolanki8080@gmail.com', password: 'Pass@1234' },
+];
 
 function Login() {
   const [name, setName] = useState('');
@@ -13,11 +18,18 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
+  const applyDemoCredential = (item) => {
+    setName(item.name);
+    setEmail(item.email);
+    setPassword(item.password);
+    setError('');
+  };
+
   const buildDemoUser = (inputName, inputEmail) => {
     const emailLower = (inputEmail || '').toLowerCase();
-    let role = 'ADMIN';
+    let role = 'EMPLOYEE';
     if (emailLower.endsWith('@hr.ac.in')) role = 'HR';
-    else if (emailLower.endsWith('@chr.ac.in')) role = 'CHR';
+    else if (emailLower.endsWith('@teamsense.admin')) role = 'ADMIN';
     return {
       name: inputName || 'Demo User',
       email: inputEmail || 'demo@teamsense.ai',
@@ -25,10 +37,10 @@ function Login() {
     };
   };
 
-  const completeDemoLogin = (inputName, inputEmail) => {
-    const user = buildDemoUser(inputName, inputEmail);
-    localStorage.setItem('user', JSON.stringify(user));
-    localStorage.setItem('access_token', 'demo-token');
+  const completeJwtLogin = (payload) => {
+    const { name: userName, email: userEmail, role, token } = payload;
+    localStorage.setItem('user', JSON.stringify({ name: userName, email: userEmail, role }));
+    localStorage.setItem('access_token', token);
     navigate('/');
   };
 
@@ -38,26 +50,18 @@ function Login() {
     setError('');
 
     if (DEMO_AUTH_ONLY) {
-      completeDemoLogin(name, email);
+      const user = buildDemoUser(name, email);
+      localStorage.setItem('user', JSON.stringify(user));
+      localStorage.setItem('access_token', 'demo-token');
+      navigate('/');
       setLoading(false);
       return;
     }
 
     try {
-      const res = await axios.post('/api/accounts/login/', { name, email, password });
-      const { name: userName, email: userEmail, role, token } = res.data;
-
-      // Persist user info to localStorage
-      localStorage.setItem('user', JSON.stringify({ name: userName, email: userEmail, role }));
-      localStorage.setItem('access_token', token);
-
-      navigate('/');
+      const res = await axios.post('/api/auth/login/', { name, email, password });
+      completeJwtLogin(res.data);
     } catch (err) {
-      const status = err.response?.status;
-      if (status === 404 || status === 500 || !status) {
-        completeDemoLogin(name, email);
-        return;
-      }
       const msg = err.response?.data?.error || 'Login failed. Please check your credentials.';
       setError(msg);
     } finally {
@@ -65,14 +69,29 @@ function Login() {
     }
   };
 
-  const handleDemoAccess = () => {
+  const handleDemoAccess = async () => {
     setError('');
-    completeDemoLogin(name, email);
+    const demoName = name || 'CHRO User';
+    const demoEmail = email || 'chro@novatech.com';
+    try {
+      setLoading(true);
+      const res = await axios.post('/api/auth/login/', {
+        name: demoName,
+        email: demoEmail,
+        password: password || 'Pass@1234',
+      });
+      completeJwtLogin(res.data);
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Demo login failed. Please verify backend is running.';
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const roleBadges = [
     { label: 'HR', domain: '@hr.ac.in', color: 'bg-blue-50 text-blue-600 border-blue-200' },
-    { label: 'CHR', domain: '@chr.ac.in', color: 'bg-cyan-50 text-cyan-600 border-cyan-200' },
+    { label: 'EMPLOYEE', domain: 'any valid email', color: 'bg-cyan-50 text-cyan-600 border-cyan-200' },
     { label: 'ADMIN', domain: 'whitelisted emails', color: 'bg-purple-50 text-purple-600 border-purple-200' },
   ];
 
@@ -220,10 +239,30 @@ function Login() {
             >
               Continue with Demo Login
             </button>
+
+            <div className="rounded-xl border border-gray-200 bg-green-50/60 p-3">
+              <p className="text-xs font-semibold text-slate-600 mb-2 uppercase tracking-wide">Demo Credentials</p>
+              <div className="space-y-2">
+                {DEMO_CREDENTIALS.map((item) => (
+                  <button
+                    key={item.label}
+                    type="button"
+                    onClick={() => applyDemoCredential(item)}
+                    className="w-full text-left rounded-lg border border-gray-200 bg-white px-3 py-2 hover:border-green-300 hover:bg-green-50 transition-all"
+                  >
+                    <p className="text-sm font-semibold text-slate-700">{item.label}</p>
+                    <p className="text-xs text-slate-500">{item.email} / {item.password}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
           </form>
 
           <p className="mt-8 text-center text-xs text-slate-400">
             © {new Date().getFullYear()} TeamSense. All rights reserved.
+          </p>
+          <p className="mt-2 text-center text-sm text-slate-500">
+            New user? <Link className="text-green-700 font-medium" to="/register">Create an account</Link>
           </p>
         </div>
       </div>

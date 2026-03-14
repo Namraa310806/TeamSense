@@ -3,6 +3,8 @@ from . import views
 
 urlpatterns = [
     path('upload/', views.upload_meeting, name='meeting-upload'),
+    path('transcript/', views.meeting_transcript, name='meeting-transcript'),
+    path('summary/', views.meeting_summary, name='meeting-summary'),
     path('map-speakers/', views.map_speakers, name='meeting-map-speakers'),
     path('<int:meeting_id>/insights/', views.meeting_insights, name='meeting-insights'),
     path('upload-recording/', views.upload_meeting_recording, name='meeting-upload-recording'),

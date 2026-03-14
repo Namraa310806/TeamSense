@@ -1,8 +1,30 @@
 """RAG (Retrieval-Augmented Generation) pipeline."""
 import os
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+SAFE_REFUSAL = "I am not supposed to answer this because relevant meeting content could not be extracted confidently."
+MIN_VECTOR_CONFIDENCE = 0.18
+MIN_QUERY_TERM_OVERLAP = 2
+
+
+def _tokenize(text: str) -> set[str]:
+    return set(re.findall(r"[a-zA-Z0-9_]+", (text or '').lower()))
+
+
+def _context_quality_gate(query: str, context_parts: list[str], top_similarity: float) -> bool:
+    if top_similarity < MIN_VECTOR_CONFIDENCE:
+        return False
+
+    query_terms = _tokenize(query)
+    if not query_terms:
+        return False
+
+    context_terms = _tokenize("\n".join(context_parts))
+    overlap = len(query_terms & context_terms)
+    return overlap >= MIN_QUERY_TERM_OVERLAP
 
 
 def rag_query(query: str, employee_id: int = None) -> dict:
@@ -38,7 +60,7 @@ def rag_query(query: str, employee_id: int = None) -> dict:
     top_k = scored[:3]
     if not top_k:
         return {
-            'answer': 'No relevant meeting transcripts found. Please upload some meeting transcripts first.',
+            'answer': SAFE_REFUSAL,
             'sources': [],
             'confidence': 0.0,
         }
@@ -61,6 +83,14 @@ def rag_query(query: str, employee_id: int = None) -> dict:
         })
 
     context = "\n---\n".join(context_parts)
+    top_confidence = float(top_k[0][0]) if top_k else 0.0
+
+    if not _context_quality_gate(query, context_parts, top_confidence):
+        return {
+            'answer': SAFE_REFUSAL,
+            'sources': sources,
+            'confidence': round(top_confidence, 3),
+        }
 
     # Step 4: Generate answer
     answer = _generate_answer(query, context)
@@ -68,7 +98,7 @@ def rag_query(query: str, employee_id: int = None) -> dict:
     return {
         'answer': answer,
         'sources': sources,
-        'confidence': round(top_k[0][0], 3) if top_k else 0.0,
+        'confidence': round(top_confidence, 3),
     }
 
 
@@ -96,9 +126,10 @@ def _openai_answer(query: str, context: str, api_key: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "You are an AI HR assistant. Answer questions about employees based on "
-                    "the provided meeting transcript context. Be specific, cite dates and "
-                    "employee names. If the context doesn't contain enough information, say so."
+                    "You are an AI HR assistant. Use ONLY the provided context and do not invent facts. "
+                    "Provide concise, relevant answers tied to employee names and dates when available. "
+                    "If context is insufficient or unrelated, respond exactly with: "
+                    "'I am not supposed to answer this because relevant meeting content could not be extracted confidently.'"
                 ),
             },
             {
@@ -114,14 +145,14 @@ def _openai_answer(query: str, context: str, api_key: str) -> str:
 
 def _fallback_answer(query: str, context: str) -> str:
     """Generate a simple answer by extracting relevant sentences from context."""
-    query_words = set(query.lower().split())
+    query_words = _tokenize(query)
     context_lines = context.split('\n')
 
     relevant = []
     for line in context_lines:
-        line_words = set(line.lower().split())
+        line_words = _tokenize(line)
         overlap = query_words & line_words
-        if len(overlap) >= 2 and len(line.strip()) > 20:
+        if len(overlap) >= MIN_QUERY_TERM_OVERLAP and len(line.strip()) > 20:
             relevant.append(line.strip())
 
     if relevant:
@@ -130,7 +161,4 @@ def _fallback_answer(query: str, context: str) -> str:
             answer += f"• {line}\n"
         return answer
 
-    return (
-        "Based on the available meeting transcripts, I found related discussions. "
-        f"The context includes the following information:\n\n{context[:800]}"
-    )
+    return SAFE_REFUSAL
