@@ -61,3 +61,12 @@ dist/
 
 # Custom
 # Add any other files/folders to ignore below
+
+# Media files
+media/
+backend/media/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
