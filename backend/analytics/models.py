@@ -23,3 +23,23 @@ class MeetingEmbedding(models.Model):
 
     def __str__(self):
         return f"Embedding for Meeting {self.meeting.id}"
+
+
+class MeetingAnalysis(models.Model):
+    meeting = models.OneToOneField(Meeting, on_delete=models.CASCADE, related_name='analysis')
+    transcript = models.TextField()
+    summary = models.TextField(blank=True, default='')
+    employee_sentiment_scores = models.JSONField(default=dict, blank=True)
+    participation_score = models.FloatField(default=0.0)
+    collaboration_signals = models.JSONField(default=dict, blank=True)
+    engagement_signals = models.JSONField(default=dict, blank=True)
+    conflict_detection = models.JSONField(default=dict, blank=True)
+    speaker_mapping = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Analysis for Meeting {self.meeting.id}"

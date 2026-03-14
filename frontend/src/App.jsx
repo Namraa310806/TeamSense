@@ -6,6 +6,7 @@ import EmployeeProfile from './pages/EmployeeProfile';
 import MeetingInsights from './pages/MeetingInsights';
 import AIAssistant from './pages/AIAssistant';
 import Login from './pages/Login';
+import MeetingAnalysis from './pages/MeetingAnalysis';
 
 /** Returns true when the user has a valid session stored in localStorage. */
 function isAuthenticated() {
@@ -29,9 +30,9 @@ function ProtectedRoute({ children }) {
 /** Layout wrapper that renders the sidebar + main content area. */
 function AppLayout({ children }) {
   return (
-    <div className="flex min-h-screen bg-surface-900">
+    <div className="flex min-h-screen bg-green-50">
       <Sidebar />
-      <main className="flex-1 ml-64 p-8 overflow-auto">
+      <main className="flex-1 ml-64 p-8 overflow-auto bg-green-50">
         {children}
       </main>
     </div>
@@ -83,6 +84,14 @@ function App() {
           element={
             <ProtectedRoute>
               <AppLayout><AIAssistant /></AppLayout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/meeting-analysis"
+          element={
+            <ProtectedRoute>
+              <AppLayout><MeetingAnalysis /></AppLayout>
             </ProtectedRoute>
           }
         />
