@@ -6,7 +6,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from accounts.models import Organization
-from accounts.permissions import IsAdmin, IsExecutive, IsHR
+from accounts.permissions import IsAdmin, IsCHR, IsExecutive, IsHR
 from analytics.models import MeetingAnalysis
 from analytics.serializers import MeetingAnalysisSerializer
 from employees.models import Employee
@@ -94,7 +94,7 @@ def _meeting_queryset_for_user(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def upload_meeting(request):
     """POST /api/meetings/upload/
 
@@ -152,7 +152,7 @@ def upload_meeting(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def meeting_list(request):
     queryset = _meeting_queryset_for_user(request)
 
@@ -165,7 +165,7 @@ def meeting_list(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def meeting_detail(request, pk):
     meeting = _meeting_queryset_for_user(request).filter(id=pk).first()
     if not meeting:
@@ -181,7 +181,7 @@ def meeting_detail(request, pk):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def meeting_transcript(request):
     """GET /api/meetings/transcript/?meeting_id=1"""
     meeting_id = request.query_params.get('meeting_id')
@@ -205,7 +205,7 @@ def meeting_transcript(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def meeting_summary(request):
     """GET /api/meetings/summary/?meeting_id=1"""
     meeting_id = request.query_params.get('meeting_id')
@@ -227,7 +227,7 @@ def meeting_summary(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def map_speakers(request):
     """POST /api/meetings/map-speakers/
 
@@ -270,7 +270,7 @@ def map_speakers(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def meeting_insights(request, meeting_id):
     meeting = _meeting_queryset_for_user(request).filter(id=meeting_id).first()
     if not meeting:
@@ -302,7 +302,7 @@ def meeting_insights(request, meeting_id):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def upload_meeting_recording(request):
     """Backward-compatible endpoint that forwards to upload contract.
 
@@ -364,13 +364,13 @@ def upload_meeting_recording(request):
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def meeting_analysis_detail(request, meeting_id):
     return meeting_insights(request, meeting_id)
 
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsAdmin])
+@permission_classes([IsAuthenticated, IsExecutive | IsHR | IsCHR | IsAdmin])
 def employee_meeting_insights(request, employee_id):
     org = _user_org(request.user)
     employee = Employee.objects.filter(id=employee_id).first()

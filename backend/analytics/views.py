@@ -10,45 +10,53 @@ from .serializers import EmployeeInsightSerializer, MeetingEmbeddingSerializer
 from rest_framework.views import APIView
 
 
+def _user_org(user):
+    if hasattr(user, 'profile'):
+        return user.profile.organization
+    return None
+
+
+def _is_admin(user):
+    return hasattr(user, 'profile') and user.profile.role == 'ADMIN'
+
+
+def _scoped_employee_queryset(user):
+    if _is_admin(user):
+        return Employee.objects.all()
+    org = _user_org(user)
+    if org:
+        return Employee.objects.filter(organization=org)
+    return Employee.objects.all()
+
+
+def _scoped_meeting_queryset(user):
+    if _is_admin(user):
+        return Meeting.objects.select_related('employee', 'organization')
+    org = _user_org(user)
+    if org:
+        # Keep scope consistent with meeting list endpoint behavior.
+        return Meeting.objects.select_related('employee', 'organization').filter(organization=org)
+    return Meeting.objects.select_related('employee', 'organization')
+
+
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard(request):
     """Dashboard summary endpoint."""
     user = request.user
+    user_org = _user_org(user)
 
-    user_org = request.user.profile.organization if hasattr(request.user, 'profile') else None
+    scoped_employees = _scoped_employee_queryset(user)
+    scoped_meetings = _scoped_meeting_queryset(user)
 
-    # ADMIN sees all data
-    if hasattr(user, 'profile') and user.profile.role == 'ADMIN':
-        employee_count = Employee.objects.count()
-        meeting_count = Meeting.objects.count()
-        dept_sentiment = (
-            Meeting.objects
-            .values('employee__department')
-            .annotate(avg_sentiment=Avg('sentiment_score'), count=Count('id'))
-            .order_by('employee__department')
-        )
-    elif hasattr(user, 'profile') and user.profile.organization:
-        user_org = user.profile.organization
-        employee_count = Employee.objects.filter(organization=user_org).count()
-        meeting_count = Meeting.objects.filter(employee__organization=user_org).count()
-        dept_sentiment = (
-            Meeting.objects
-            .filter(employee__organization=user_org)
-            .values('employee__department')
-            .annotate(avg_sentiment=Avg('sentiment_score'), count=Count('id'))
-            .order_by('employee__department')
-        )
-    else:
-        # Authenticated user with no org: show all data
-        employee_count = Employee.objects.count()
-        meeting_count = Meeting.objects.count()
-        dept_sentiment = (
-            Meeting.objects
-            .values('employee__department')
-            .annotate(avg_sentiment=Avg('sentiment_score'), count=Count('id'))
-            .order_by('employee__department')
-        )
+    employee_count = scoped_employees.count()
+    meeting_count = scoped_meetings.count()
+    dept_sentiment = (
+        scoped_meetings
+        .values('employee__department')
+        .annotate(avg_sentiment=Avg('sentiment_score'), count=Count('id'))
+        .order_by('employee__department')
+    )
 
     department_sentiment = [
         {
@@ -61,6 +69,8 @@ def dashboard(request):
 
     # High attrition risk employees
     high_risk = EmployeeInsight.objects.filter(burnout_risk__gte=0.6).select_related('employee')
+    if not _is_admin(user) and user_org:
+        high_risk = high_risk.filter(employee__organization=user_org)
     high_attrition_employees = [
         {
             'id': insight.employee.id,
@@ -72,7 +82,7 @@ def dashboard(request):
     ]
 
     # Recent meetings
-    recent_meetings = Meeting.objects.select_related('employee').order_by('-date')[:5]
+    recent_meetings = scoped_meetings.order_by('-date', '-id')[:5]
     recent = [
         {
             'id': m.id,
@@ -83,11 +93,6 @@ def dashboard(request):
         for m in recent_meetings
     ]
 
-    scoped_meetings = (
-        Meeting.objects.all()
-        if hasattr(request.user, 'profile') and request.user.profile.role == 'ADMIN'
-        else Meeting.objects.filter(organization=user_org)
-    )
     scoped_employee_insights = EmployeeMeetingInsight.objects.filter(meeting__in=scoped_meetings)
 
     team_sentiment_trend = [
